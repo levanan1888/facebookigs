@@ -35,168 +35,107 @@ new #[Layout('components.layouts.auth')] class extends Component {
     }
 }; ?>
 
-<div>
-    <!-- Background Video/Animation -->
-    <div class="fixed inset-0 z-0 overflow-hidden">
-        <!-- Dragon Animation -->
-        <div class="absolute inset-0">
-            <div class="dragon-container">
-                <div class="dragon-body">
-                    <div class="dragon-head">🐉</div>
-                    <div class="dragon-tail">✨</div>
-                </div>
+<div class="min-h-screen bg-gray-50 flex">
+    <!-- Left Section - Branding -->
+    <div class="flex-1 flex items-center justify-center px-8 py-12">
+        <div class="max-w-md">
+            <!-- Facebook Logo -->
+            <div class="text-center mb-8">
+                <div class="text-6xl font-bold text-blue-600 mb-4">facebook</div>
             </div>
+            
+            <!-- Slogan -->
+            <h2 class="text-2xl leading-8 text-gray-900 font-normal">
+                Facebook giúp bạn kết nối và chia sẻ với mọi người trong cuộc sống của mình.
+            </h2>
         </div>
-        
-        <!-- Gradient Background -->
-        <div class="absolute inset-0 bg-gradient-to-br from-blue-50 via-white to-blue-100"></div>
     </div>
 
-    <div class="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 relative z-10">
-        <div class="max-w-md w-full space-y-8">
-            <!-- Logo and Header -->
-            <div class="text-center">
-                <div class="mx-auto h-20 w-20 flex items-center justify-center rounded-full bg-gradient-to-r from-blue-600 to-blue-700 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105">
-                    <i class="fab fa-facebook text-white text-3xl"></i>
-                </div>
-                <h2 class="mt-6 text-3xl font-bold text-blue-800">
-                    Tạo tài khoản mới
-                </h2>
-                <p class="mt-2 text-lg text-blue-700 font-medium">
-                    Tham gia cùng chúng tôi và bắt đầu hành trình
-                </p>
-            </div>
-
-            <!-- Register Form -->
-            <div class="bg-white py-8 px-6 shadow-2xl rounded-2xl border border-blue-200">
-                <!-- Session Status -->
-                <x-auth-session-status class="mb-4 text-center" :status="session('status')" />
-
-                <form method="POST" wire:submit="register" class="space-y-6">
-                    <!-- Name -->
+    <!-- Right Section - Register Form -->
+    <div class="flex-1 flex items-center justify-center px-8 py-12">
+        <div class="w-full max-w-md">
+            <!-- Register Form Card -->
+            <div class="bg-white rounded-lg shadow-lg p-8 border border-gray-200">
+                <h2 class="text-2xl font-bold text-gray-900 mb-6 text-center">Tạo tài khoản mới</h2>
+                
+                <form method="POST" wire:submit="register" class="space-y-4">
+                    <!-- Name Input -->
                     <div>
-                        <label for="name" class="block text-sm font-semibold text-blue-800 mb-2">
-                            Họ và tên
-                        </label>
-                        <div class="relative">
-                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                <i class="fas fa-user text-blue-600"></i>
-                            </div>
-                            <input
-                                wire:model="name"
-                                id="name"
-                                type="text"
-                                required
-                                autofocus
-                                autocomplete="name"
-                                placeholder="Nhập họ và tên của bạn"
-                                class="block w-full pl-10 pr-3 py-3 border-2 border-blue-300 rounded-lg shadow-sm placeholder-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white text-blue-900 font-medium"
-                            />
-                        </div>
+                        <input
+                            wire:model="name"
+                            id="name"
+                            type="text"
+                            required
+                            autofocus
+                            autocomplete="name"
+                            placeholder="Họ và tên"
+                            class="block w-full px-4 py-3 border border-gray-300 rounded-lg text-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
                         @error('name')
-                            <p class="mt-1 text-sm text-red-600 font-medium">{{ $message }}</p>
+                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                         @enderror
                     </div>
 
-                    <!-- Email Address -->
+                    <!-- Email Input -->
                     <div>
-                        <label for="email" class="block text-sm font-semibold text-blue-800 mb-2">
-                            Địa chỉ email
-                        </label>
-                        <div class="relative">
-                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                <i class="fas fa-envelope text-blue-600"></i>
-                            </div>
-                            <input
-                                wire:model="email"
-                                id="email"
-                                type="email"
-                                required
-                                autocomplete="email"
-                                placeholder="Nhập email của bạn"
-                                class="block w-full pl-10 pr-3 py-3 border-2 border-blue-300 rounded-lg shadow-sm placeholder-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white text-blue-900 font-medium"
-                            />
-                        </div>
+                        <input
+                            wire:model="email"
+                            id="email"
+                            type="email"
+                            required
+                            autocomplete="email"
+                            placeholder="Email"
+                            class="block w-full px-4 py-3 border border-gray-300 rounded-lg text-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
                         @error('email')
-                            <p class="mt-1 text-sm text-red-600 font-medium">{{ $message }}</p>
+                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                         @enderror
                     </div>
 
-                    <!-- Password -->
+                    <!-- Password Input -->
                     <div>
-                        <label for="password" class="block text-sm font-semibold text-blue-800 mb-2">
-                            Mật khẩu
-                        </label>
-                        <div class="relative">
-                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                <i class="fas fa-lock text-blue-600"></i>
-                            </div>
-                            <input
-                                wire:model="password"
-                                id="password"
-                                type="password"
-                                required
-                                autocomplete="new-password"
-                                placeholder="Tạo mật khẩu mới"
-                                class="block w-full pl-10 pr-3 py-3 border-2 border-blue-300 rounded-lg shadow-sm placeholder-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white text-blue-900 font-medium"
-                            />
-                        </div>
+                        <input
+                            wire:model="password"
+                            id="password"
+                            type="password"
+                            required
+                            autocomplete="new-password"
+                            placeholder="Mật khẩu mới"
+                            class="block w-full px-4 py-3 border border-gray-300 rounded-lg text-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
                         @error('password')
-                            <p class="mt-1 text-sm text-red-600 font-medium">{{ $message }}</p>
+                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                         @enderror
                     </div>
 
-                    <!-- Confirm Password -->
+                    <!-- Confirm Password Input -->
                     <div>
-                        <label for="password_confirmation" class="block text-sm font-semibold text-blue-800 mb-2">
-                            Xác nhận mật khẩu
-                        </label>
-                        <div class="relative">
-                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                <i class="fas fa-check-circle text-blue-600"></i>
-                            </div>
-                            <input
-                                wire:model="password_confirmation"
-                                id="password_confirmation"
-                                type="password"
-                                required
-                                autocomplete="new-password"
-                                placeholder="Xác nhận mật khẩu của bạn"
-                                class="block w-full pl-10 pr-3 py-3 border-2 border-blue-300 rounded-lg shadow-sm placeholder-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white text-blue-900 font-medium"
-                            />
-                        </div>
+                        <input
+                            wire:model="password_confirmation"
+                            id="password_confirmation"
+                            type="password"
+                            required
+                            autocomplete="new-password"
+                            placeholder="Nhập lại mật khẩu"
+                            class="block w-full px-4 py-3 border border-gray-300 rounded-lg text-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
                     </div>
 
                     <!-- Terms and Conditions -->
-                    <div class="flex items-start">
-                        <div class="flex items-center h-5">
-                            <input
-                                id="terms"
-                                type="checkbox"
-                                required
-                                class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-blue-300 rounded"
-                            />
-                        </div>
-                        <div class="ml-3 text-sm">
-                            <label for="terms" class="text-blue-700 font-medium">
-                                Tôi đồng ý với 
-                                <a href="#" class="text-blue-600 hover:text-blue-700 font-semibold underline transition-colors duration-200">Điều khoản dịch vụ</a>
-                                và
-                                <a href="#" class="text-blue-600 hover:text-blue-700 font-semibold underline transition-colors duration-200">Chính sách bảo mật</a>
-                            </label>
-                        </div>
+                    <div class="text-sm text-gray-600">
+                        Bằng cách nhấp vào Đăng ký, bạn đồng ý với 
+                        <a href="#" class="text-blue-600 hover:text-blue-700 font-semibold">Điều khoản</a>, 
+                        <a href="#" class="text-blue-600 hover:text-blue-700 font-semibold">Chính sách quyền riêng tư</a> và 
+                        <a href="#" class="text-blue-600 hover:text-blue-700 font-semibold">Chính sách cookie</a> của chúng tôi.
                     </div>
 
-                    <!-- Submit Button -->
+                    <!-- Register Button -->
                     <div>
                         <button
                             type="submit"
-                            class="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-semibold rounded-lg text-white bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105"
+                            class="w-full bg-green-500 hover:bg-green-600 text-white font-bold text-xl py-3 px-4 rounded-lg transition-colors duration-200"
                         >
-                            <span class="absolute left-0 inset-y-0 flex items-center pl-3">
-                                <i class="fas fa-user-plus text-blue-200 group-hover:text-blue-100 transition-colors duration-200"></i>
-                            </span>
-                            Tạo tài khoản
+                            Đăng ký
                         </button>
                     </div>
                 </form>
@@ -205,98 +144,81 @@ new #[Layout('components.layouts.auth')] class extends Component {
                 <div class="mt-6">
                     <div class="relative">
                         <div class="absolute inset-0 flex items-center">
-                            <div class="w-full border-t border-blue-300"></div>
+                            <div class="w-full border-t border-gray-300"></div>
                         </div>
-                        <div class="relative flex justify-center text-sm">
-                            <span class="px-2 bg-white text-blue-600 font-medium">Hoặc đăng ký với</span>
-                        </div>
-                    </div>
-
-                    <!-- Social Login Buttons -->
-                    <div class="mt-6 grid grid-cols-2 gap-3">
-                        <button class="w-full inline-flex justify-center py-2 px-4 border-2 border-blue-300 rounded-lg shadow-sm bg-white text-sm font-medium text-blue-700 hover:bg-blue-50 hover:border-blue-400 transition-all duration-200 transform hover:scale-105">
-                            <i class="fab fa-google text-red-500"></i>
-                            <span class="ml-2">Google</span>
-                        </button>
-
-                        <button class="w-full inline-flex justify-center py-2 px-4 border-2 border-blue-300 rounded-lg shadow-sm bg-white text-sm font-medium text-blue-700 hover:bg-blue-50 hover:border-blue-400 transition-all duration-200 transform hover:scale-105">
-                            <i class="fab fa-facebook text-blue-600"></i>
-                            <span class="ml-2">Facebook</span>
-                        </button>
                     </div>
                 </div>
 
-                <!-- Sign In Link -->
+                <!-- Login Link -->
                 <div class="mt-6 text-center">
-                    <p class="text-sm text-blue-700 font-medium">
-                        Đã có tài khoản? 
-                        <a href="{{ route('login') }}" class="text-blue-600 hover:text-blue-700 font-semibold underline transition-colors duration-200">
-                            Đăng nhập ngay
-                        </a>
-                    </p>
+                    <a href="{{ route('login') }}" 
+                       class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-xl py-3 px-4 rounded-lg transition-colors duration-200 inline-block text-center">
+                        Đăng nhập
+                    </a>
                 </div>
+            </div>
+
+            <!-- Create Page Text -->
+            <div class="mt-6 text-center">
+                <p class="text-sm text-gray-600">
+                    <a href="#" class="font-semibold text-gray-900 hover:underline">Tạo Trang</a> dành cho người nổi tiếng, thương hiệu hoặc doanh nghiệp.
+                </p>
             </div>
         </div>
     </div>
+</div>
 
-    <style>
-    /* Dragon Animation */
-    .dragon-container {
-        position: absolute;
-        width: 100%;
-        height: 100%;
-        overflow: hidden;
-    }
+<!-- Footer -->
+<div class="fixed bottom-0 left-0 right-0 bg-gray-50 border-t border-gray-200 py-4 px-8">
+    <div class="max-w-6xl mx-auto">
+        <!-- Language Row -->
+        <div class="flex flex-wrap items-center gap-4 mb-4 text-sm">
+            <span class="text-gray-600">Tiếng Việt</span>
+            <span class="text-gray-400">English (UK)</span>
+            <span class="text-gray-400">中文(台灣)</span>
+            <span class="text-gray-400">日本語</span>
+            <span class="text-gray-400">Français (France)</span>
+            <span class="text-gray-400">ภาษาไทย</span>
+            <span class="text-gray-400">Español</span>
+            <span class="text-gray-400">Português (Brasil)</span>
+            <span class="text-gray-400">Deutsch</span>
+            <span class="text-gray-400">Italiano</span>
+            <button class="text-gray-400 hover:text-gray-600">+</button>
+        </div>
 
-    .dragon-body {
-        position: absolute;
-        top: 50%;
-        left: -100px;
-        animation: dragon-fly 15s linear infinite;
-    }
+        <!-- Links Row -->
+        <div class="flex flex-wrap items-center gap-4 text-sm text-gray-600">
+            <a href="#" class="hover:underline">Đăng ký</a>
+            <a href="#" class="hover:underline">Instagram</a>
+            <a href="#" class="hover:underline">Tuyển dụng</a>
+            <a href="#" class="hover:underline">Đăng nhập</a>
+            <a href="#" class="hover:underline">Threads</a>
+            <a href="#" class="hover:underline">Cookie</a>
+            <a href="#" class="hover:underline">Messenger</a>
+            <a href="#" class="hover:underline">Facebook Lite</a>
+            <a href="#" class="hover:underline">Video</a>
+            <a href="#" class="hover:underline">Meta Pay</a>
+            <a href="#" class="hover:underline">Cửa hàng trên Meta</a>
+            <a href="#" class="hover:underline">Meta Quest</a>
+            <a href="#" class="hover:underline">Ray-Ban Meta</a>
+            <a href="#" class="hover:underline">Meta AI</a>
+            <a href="#" class="hover:underline">Trung tâm thông tin bỏ phiếu</a>
+            <a href="#" class="hover:underline">Chính sách quyền riêng tư</a>
+            <a href="#" class="hover:underline">Trung tâm quyền riêng tư</a>
+            <a href="#" class="hover:underline">Giới thiệu</a>
+            <a href="#" class="hover:underline">Tạo quảng cáo</a>
+            <a href="#" class="hover:underline">Lựa chọn quảng cáo</a>
+            <a href="#" class="hover:underline">Điều khoản</a>
+            <a href="#" class="hover:underline">Trợ giúp</a>
+            <a href="#" class="hover:underline">Tải thông tin liên hệ lên & đối tượng không phải người dùng</a>
+            <a href="#" class="hover:underline">Nội dung khác do Meta AI tạo</a>
+            <a href="#" class="hover:underline">Tạo Trang</a>
+            <a href="#" class="hover:underline">Nhà phát triển</a>
+        </div>
 
-    .dragon-head {
-        font-size: 4rem;
-        animation: dragon-breathe 2s ease-in-out infinite;
-    }
-
-    .dragon-tail {
-        font-size: 2rem;
-        position: absolute;
-        top: -20px;
-        right: -30px;
-        animation: tail-wag 1s ease-in-out infinite;
-    }
-
-    @keyframes dragon-fly {
-        0% {
-            left: -100px;
-            transform: translateY(-50%) rotate(0deg);
-        }
-        25% {
-            transform: translateY(-50%) rotate(5deg);
-        }
-        50% {
-            left: 50%;
-            transform: translateY(-50%) rotate(0deg);
-        }
-        75% {
-            transform: translateY(-50%) rotate(-5deg);
-        }
-        100% {
-            left: calc(100% + 100px);
-            transform: translateY(-50%) rotate(0deg);
-        }
-    }
-
-    @keyframes dragon-breathe {
-        0%, 100% { transform: scale(1); }
-        50% { transform: scale(1.1); }
-    }
-
-    @keyframes tail-wag {
-        0%, 100% { transform: rotate(0deg); }
-        50% { transform: rotate(20deg); }
-    }
-    </style>
+        <!-- Copyright -->
+        <div class="mt-4 text-sm text-gray-600">
+            Meta © 2025
+        </div>
+    </div>
 </div>
