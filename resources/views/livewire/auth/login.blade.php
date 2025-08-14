@@ -81,7 +81,7 @@ new #[Layout('components.layouts.auth')] class extends Component {
             <div class="max-w-md">
                 <!-- Facebook Logo -->
                 <div class="text-center mb-8">
-                    <div class="text-6xl font-bold text-blue-600 mb-4">facebook</div>
+                    <div class="text-8xl font-bold text-blue-600 mb-4">facebook</div>
                 </div>
                 
                 <!-- Slogan -->
@@ -107,7 +107,7 @@ new #[Layout('components.layouts.auth')] class extends Component {
                                 autofocus
                                 autocomplete="email"
                                 placeholder="Email hoặc số điện thoại"
-                                class="block w-full px-4 py-3 border border-gray-300 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                class="block w-full px-4 py-3 border border-gray-300 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 placeholder-gray-400"
                             />
                             @error('email')
                                 <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
@@ -123,7 +123,7 @@ new #[Layout('components.layouts.auth')] class extends Component {
                                 required
                                 autocomplete="current-password"
                                 placeholder="Mật khẩu"
-                                class="block w-full px-4 py-3 border border-gray-300 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                class="block w-full px-4 py-3 border border-gray-300 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 placeholder-gray-400"
                             />
                             @error('password')
                                 <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
@@ -168,13 +168,6 @@ new #[Layout('components.layouts.auth')] class extends Component {
                             </a>
                         </div>
                     @endif
-                </div>
-
-                <!-- Create Page Text -->
-                <div class="mt-6 text-center">
-                    <p class="text-sm text-gray-600">
-                        <a href="#" class="font-semibold text-gray-900 hover:underline">Tạo Trang</a> dành cho người nổi tiếng, thương hiệu hoặc doanh nghiệp.
-                    </p>
                 </div>
             </div>
         </div>
