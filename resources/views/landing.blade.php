@@ -3,10 +3,11 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Facebook Insgin - Giải pháp quản lý Facebook chuyên nghiệp</title>
-    <meta name="description" content="Facebook Insgin - Nền tảng quản lý Facebook hiệu quả, giúp tối ưu hóa chiến dịch marketing và tăng tương tác với khách hàng">
+    <title>Facebook Insgin - Quản lý Facebook chuyên nghiệp</title>
+    <meta name="description" content="Facebook Insgin - Nền tảng quản lý Facebook hiệu quả, tối ưu hóa marketing và tăng tương tác khách hàng">
     <link href="{{ asset('css/app.css') }}" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
         * {
             margin: 0;
@@ -17,9 +18,9 @@
         body {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             line-height: 1.6;
-            color: #333;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
+            color: #1e293b;
+            background: #ffffff;
+            font-weight: 300;
         }
         
         .container {
@@ -30,7 +31,7 @@
         
         /* Header */
         .header {
-            background: rgba(255, 255, 255, 0.1);
+            background: rgba(255, 255, 255, 0.95);
             backdrop-filter: blur(10px);
             padding: 1rem 0;
             position: fixed;
@@ -38,6 +39,7 @@
             left: 0;
             right: 0;
             z-index: 1000;
+            border-bottom: 1px solid #e2e8f0;
         }
         
         .nav {
@@ -47,9 +49,9 @@
         }
         
         .logo {
-            font-size: 1.8rem;
-            font-weight: 700;
-            color: white;
+            font-size: 1.6rem;
+            font-weight: 600;
+            color: #0ea5e9;
             text-decoration: none;
         }
         
@@ -60,14 +62,15 @@
         }
         
         .nav-links a {
-            color: white;
+            color: #475569;
             text-decoration: none;
-            font-weight: 500;
+            font-weight: 400;
             transition: color 0.3s ease;
+            font-size: 0.95rem;
         }
         
         .nav-links a:hover {
-            color: #fbbf24;
+            color: #0ea5e9;
         }
         
         .auth-buttons {
@@ -76,58 +79,61 @@
         }
         
         .btn {
-            padding: 0.75rem 1.5rem;
+            padding: 0.6rem 1.2rem;
             border: none;
-            border-radius: 8px;
-            font-weight: 600;
+            border-radius: 6px;
+            font-weight: 500;
             text-decoration: none;
             display: inline-block;
             transition: all 0.3s ease;
             cursor: pointer;
+            font-size: 0.9rem;
         }
         
         .btn-primary {
-            background: #fbbf24;
-            color: #1f2937;
+            background: #0ea5e9;
+            color: white;
         }
         
         .btn-primary:hover {
-            background: #f59e0b;
-            transform: translateY(-2px);
+            background: #0284c7;
+            transform: translateY(-1px);
         }
         
         .btn-outline {
             background: transparent;
-            color: white;
-            border: 2px solid white;
+            color: #0ea5e9;
+            border: 1px solid #0ea5e9;
         }
         
         .btn-outline:hover {
-            background: white;
-            color: #1f2937;
+            background: #0ea5e9;
+            color: white;
         }
         
         /* Hero Section */
         .hero {
-            padding: 8rem 0 4rem;
+            padding: 7rem 0 4rem;
             text-align: center;
-            color: white;
+            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
         }
         
         .hero h1 {
-            font-size: 3.5rem;
-            font-weight: 800;
-            margin-bottom: 1.5rem;
+            font-size: 2.8rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
             line-height: 1.2;
+            color: #0c4a6e;
         }
         
         .hero p {
-            font-size: 1.25rem;
+            font-size: 1.1rem;
             margin-bottom: 2rem;
-            opacity: 0.9;
-            max-width: 600px;
+            color: #475569;
+            max-width: 500px;
             margin-left: auto;
             margin-right: auto;
+            font-weight: 400;
         }
         
         .hero-buttons {
@@ -138,99 +144,104 @@
         }
         
         .btn-lg {
-            padding: 1rem 2rem;
-            font-size: 1.1rem;
+            padding: 0.8rem 1.8rem;
+            font-size: 1rem;
         }
         
         /* Features Section */
         .features {
-            padding: 5rem 0;
+            padding: 4rem 0;
             background: white;
         }
         
         .section-title {
             text-align: center;
-            font-size: 2.5rem;
-            font-weight: 700;
-            margin-bottom: 3rem;
-            color: #1f2937;
+            font-size: 2rem;
+            font-weight: 600;
+            margin-bottom: 2.5rem;
+            color: #0c4a6e;
         }
         
         .features-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 2rem;
-            margin-top: 3rem;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+            margin-top: 2.5rem;
         }
         
         .feature-card {
             background: #f8fafc;
-            padding: 2rem;
-            border-radius: 16px;
+            padding: 1.5rem;
+            border-radius: 12px;
             text-align: center;
             transition: transform 0.3s ease, box-shadow 0.3s ease;
+            border: 1px solid #e2e8f0;
         }
         
         .feature-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            transform: translateY(-3px);
+            box-shadow: 0 10px 25px rgba(14, 165, 233, 0.1);
         }
         
         .feature-icon {
-            width: 80px;
-            height: 80px;
-            background: linear-gradient(135deg, #667eea, #764ba2);
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(135deg, #0ea5e9, #0284c7);
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            margin: 0 auto 1.5rem;
+            margin: 0 auto 1rem;
             color: white;
-            font-size: 2rem;
+            font-size: 1.5rem;
         }
         
         .feature-card h3 {
-            font-size: 1.5rem;
-            font-weight: 700;
-            margin-bottom: 1rem;
-            color: #1f2937;
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 0.8rem;
+            color: #0c4a6e;
         }
         
         .feature-card p {
-            color: #6b7280;
-            line-height: 1.6;
+            color: #64748b;
+            line-height: 1.5;
+            font-size: 0.9rem;
+            font-weight: 400;
         }
         
         /* CTA Section */
         .cta {
-            padding: 5rem 0;
-            background: linear-gradient(135deg, #1f2937, #374151);
+            padding: 4rem 0;
+            background: linear-gradient(135deg, #0ea5e9, #0284c7);
             color: white;
             text-align: center;
         }
         
         .cta h2 {
-            font-size: 2.5rem;
-            font-weight: 700;
-            margin-bottom: 1.5rem;
+            font-size: 2rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
         }
         
         .cta p {
-            font-size: 1.25rem;
-            margin-bottom: 2rem;
+            font-size: 1.1rem;
+            margin-bottom: 1.5rem;
             opacity: 0.9;
+            font-weight: 400;
         }
         
         /* Footer */
         .footer {
-            background: #111827;
+            background: #0f172a;
             color: white;
-            padding: 3rem 0 2rem;
+            padding: 2rem 0 1.5rem;
             text-align: center;
         }
         
         .footer p {
             opacity: 0.7;
+            font-weight: 400;
         }
         
         /* Responsive */
@@ -240,7 +251,7 @@
             }
             
             .hero h1 {
-                font-size: 2.5rem;
+                font-size: 2.2rem;
             }
             
             .hero-buttons {
@@ -278,8 +289,8 @@
         <!-- Hero Section -->
         <section class="hero">
             <div class="container">
-                <h1>Quản lý Facebook hiệu quả hơn bao giờ hết</h1>
-                <p>Facebook Insgin cung cấp các công cụ mạnh mẽ để quản lý trang Facebook, tối ưu hóa nội dung và tăng tương tác với khách hàng một cách chuyên nghiệp.</p>
+                <h1>Quản lý Facebook hiệu quả</h1>
+                <p>Công cụ mạnh mẽ để quản lý trang Facebook, tối ưu hóa nội dung và tăng tương tác khách hàng.</p>
                 <div class="hero-buttons">
                     <a href="{{ route('register') }}" class="btn btn-primary btn-lg">Bắt đầu miễn phí</a>
                     <a href="#features" class="btn btn-outline btn-lg">Tìm hiểu thêm</a>
@@ -290,49 +301,49 @@
         <!-- Features Section -->
         <section class="features" id="features">
             <div class="container">
-                <h2 class="section-title">Tính năng nổi bật</h2>
+                <h2 class="section-title">Tính năng chính</h2>
                 <div class="features-grid">
                     <div class="feature-card">
                         <div class="feature-icon">
                             <i class="fas fa-chart-line"></i>
                         </div>
                         <h3>Phân tích hiệu suất</h3>
-                        <p>Theo dõi và phân tích hiệu suất của các bài đăng, giúp bạn hiểu rõ hơn về đối tượng khách hàng và tối ưu hóa chiến lược marketing.</p>
+                        <p>Theo dõi và phân tích hiệu suất bài đăng, tối ưu hóa chiến lược marketing.</p>
                     </div>
                     <div class="feature-card">
                         <div class="feature-icon">
                             <i class="fas fa-calendar-alt"></i>
                         </div>
                         <h3>Lên lịch bài đăng</h3>
-                        <p>Lên lịch trước các bài đăng để duy trì hoạt động liên tục trên trang Facebook, tiết kiệm thời gian và công sức.</p>
+                        <p>Lên lịch trước các bài đăng để duy trì hoạt động liên tục trên Facebook.</p>
                     </div>
                     <div class="feature-card">
                         <div class="feature-icon">
                             <i class="fas fa-users"></i>
                         </div>
                         <h3>Quản lý tương tác</h3>
-                        <p>Quản lý hiệu quả các bình luận, tin nhắn và tương tác với khách hàng, xây dựng mối quan hệ bền vững.</p>
+                        <p>Quản lý hiệu quả bình luận, tin nhắn và tương tác với khách hàng.</p>
                     </div>
                     <div class="feature-card">
                         <div class="feature-icon">
                             <i class="fas fa-bullhorn"></i>
                         </div>
                         <h3>Quảng cáo thông minh</h3>
-                        <p>Tối ưu hóa chiến dịch quảng cáo Facebook với các công cụ phân tích và đề xuất thông minh.</p>
+                        <p>Tối ưu hóa chiến dịch quảng cáo Facebook với công cụ phân tích thông minh.</p>
                     </div>
                     <div class="feature-card">
                         <div class="feature-icon">
                             <i class="fas fa-mobile-alt"></i>
                         </div>
                         <h3>Responsive Design</h3>
-                        <p>Giao diện thân thiện với mọi thiết bị, giúp bạn quản lý Facebook mọi lúc, mọi nơi.</p>
+                        <p>Giao diện thân thiện với mọi thiết bị, quản lý Facebook mọi lúc, mọi nơi.</p>
                     </div>
                     <div class="feature-card">
                         <div class="feature-icon">
                             <i class="fas fa-shield-alt"></i>
                         </div>
                         <h3>Bảo mật cao</h3>
-                        <p>Đảm bảo an toàn thông tin và dữ liệu của bạn với các biện pháp bảo mật tiên tiến.</p>
+                        <p>Đảm bảo an toàn thông tin và dữ liệu với biện pháp bảo mật tiên tiến.</p>
                     </div>
                 </div>
             </div>
@@ -341,9 +352,9 @@
         <!-- CTA Section -->
         <section class="cta">
             <div class="container">
-                <h2>Sẵn sàng nâng tầm Facebook của bạn?</h2>
-                <p>Tham gia cùng hàng nghìn doanh nghiệp đã thành công với Facebook Insgin</p>
-                <a href="{{ route('register') }}" class="btn btn-primary btn-lg">Đăng ký ngay hôm nay</a>
+                <h2>Sẵn sàng nâng tầm Facebook?</h2>
+                <p>Tham gia cùng hàng nghìn doanh nghiệp đã thành công</p>
+                <a href="{{ route('register') }}" class="btn btn-primary btn-lg">Đăng ký ngay</a>
             </div>
         </section>
     </main>
