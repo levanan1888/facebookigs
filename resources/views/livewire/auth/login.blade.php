@@ -73,7 +73,8 @@ new #[Layout('components.layouts.auth')] class extends Component {
     }
 }; ?>
 
-<div class="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-100 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 relative overflow-hidden">
+<div>
+    <div class="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-100 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 relative overflow-hidden">
     <!-- AI Character Animation -->
     <div class="absolute top-10 left-10 w-16 h-16 animate-bounce">
         <div class="w-full h-full bg-gradient-to-r from-blue-400 to-purple-500 rounded-full flex items-center justify-center text-white text-2xl animate-pulse">
@@ -233,36 +234,37 @@ new #[Layout('components.layouts.auth')] class extends Component {
                     </p>
                 </div>
             @endif
-        </div>
+                                </div>
     </div>
+
+    <style>
+    @keyframes float {
+        0%, 100% { transform: translateY(0px); }
+        50% { transform: translateY(-20px); }
+    }
+
+    .animate-float {
+        animation: float 3s ease-in-out infinite;
+    }
+
+    .animate-bounce {
+        animation: bounce 2s infinite;
+    }
+
+    @keyframes bounce {
+        0%, 20%, 53%, 80%, 100% {
+            transform: translate3d(0,0,0);
+        }
+        40%, 43% {
+            transform: translate3d(0,-30px,0);
+        }
+        70% {
+            transform: translate3d(0,-15px,0);
+        }
+        90% {
+            transform: translate3d(0,-4px,0);
+        }
+    }
+    </style>
 </div>
-
-<style>
-@keyframes float {
-    0%, 100% { transform: translateY(0px); }
-    50% { transform: translateY(-20px); }
-}
-
-.animate-float {
-    animation: float 3s ease-in-out infinite;
-}
-
-.animate-bounce {
-    animation: bounce 2s infinite;
-}
-
-@keyframes bounce {
-    0%, 20%, 53%, 80%, 100% {
-        transform: translate3d(0,0,0);
-    }
-    40%, 43% {
-        transform: translate3d(0,-30px,0);
-    }
-    70% {
-        transform: translate3d(0,-15px,0);
-    }
-    90% {
-        transform: translate3d(0,-4px,0);
-    }
-}
-</style>
+</div>
