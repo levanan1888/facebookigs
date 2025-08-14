@@ -81,7 +81,7 @@ new #[Layout('components.layouts.auth')] class extends Component {
             <div class="max-w-md">
                 <!-- Facebook Logo -->
                 <div class="text-center mb-8">
-                    <div class="text-8xl font-bold text-blue-600 mb-4">facebook</div>
+                    <div class="text-9xl font-bold text-blue-600 mb-4">facebook</div>
                 </div>
                 
                 <!-- Slogan -->
