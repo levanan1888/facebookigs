@@ -73,7 +73,7 @@ new #[Layout('components.layouts.auth')] class extends Component {
     }
 }; ?>
 
-<div class="min-h-screen bg-gray-50 flex flex-col">
+<div class="min-h-screen bg-gray-50 flex flex-col font-sans">
     <!-- Main Content -->
     <div class="flex flex-1">
         <!-- Left Section - Branding -->
@@ -107,7 +107,7 @@ new #[Layout('components.layouts.auth')] class extends Component {
                                 autofocus
                                 autocomplete="email"
                                 placeholder="Email hoặc số điện thoại"
-                                class="block w-full px-4 py-3 border border-gray-300 rounded-lg text-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                class="block w-full px-4 py-3 border border-gray-300 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                             />
                             @error('email')
                                 <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
@@ -123,7 +123,7 @@ new #[Layout('components.layouts.auth')] class extends Component {
                                 required
                                 autocomplete="current-password"
                                 placeholder="Mật khẩu"
-                                class="block w-full px-4 py-3 border border-gray-300 rounded-lg text-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                class="block w-full px-4 py-3 border border-gray-300 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                             />
                             @error('password')
                                 <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
@@ -134,7 +134,7 @@ new #[Layout('components.layouts.auth')] class extends Component {
                         <div>
                             <button
                                 type="submit"
-                                class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-xl py-3 px-4 rounded-lg transition-colors duration-200"
+                                class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-base py-3 px-4 rounded-lg transition-colors duration-200"
                             >
                                 Đăng nhập
                             </button>
@@ -163,7 +163,7 @@ new #[Layout('components.layouts.auth')] class extends Component {
                     @if (Route::has('register'))
                         <div class="mt-6">
                             <a href="{{ route('register') }}" 
-                               class="w-full bg-green-500 hover:bg-green-600 text-white font-bold text-xl py-3 px-4 rounded-lg transition-colors duration-200 inline-block text-center">
+                               class="w-full bg-green-500 hover:bg-green-600 text-white font-bold text-base py-3 px-4 rounded-lg transition-colors duration-200 inline-block text-center">
                                 Tạo tài khoản mới
                             </a>
                         </div>
@@ -176,61 +176,6 @@ new #[Layout('components.layouts.auth')] class extends Component {
                         <a href="#" class="font-semibold text-gray-900 hover:underline">Tạo Trang</a> dành cho người nổi tiếng, thương hiệu hoặc doanh nghiệp.
                     </p>
                 </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Footer -->
-    <div class="bg-gray-50 border-t border-gray-200 py-4 px-8">
-        <div class="max-w-6xl mx-auto">
-            <!-- Language Row -->
-            <div class="flex flex-wrap items-center gap-4 mb-4 text-sm">
-                <span class="text-gray-600">Tiếng Việt</span>
-                <span class="text-gray-400">English (UK)</span>
-                <span class="text-gray-400">中文(台灣)</span>
-                <span class="text-gray-400">日本語</span>
-                <span class="text-gray-400">Français (France)</span>
-                <span class="text-gray-400">ภาษาไทย</span>
-                <span class="text-gray-400">Español</span>
-                <span class="text-gray-400">Português (Brasil)</span>
-                <span class="text-gray-400">Deutsch</span>
-                <span class="text-gray-400">Italiano</span>
-                <button class="text-gray-400 hover:text-gray-600">+</button>
-            </div>
-
-            <!-- Links Row -->
-            <div class="flex flex-wrap items-center gap-4 text-sm text-gray-600">
-                <a href="#" class="hover:underline">Đăng ký</a>
-                <a href="#" class="hover:underline">Instagram</a>
-                <a href="#" class="hover:underline">Tuyển dụng</a>
-                <a href="#" class="hover:underline">Đăng nhập</a>
-                <a href="#" class="hover:underline">Threads</a>
-                <a href="#" class="hover:underline">Cookie</a>
-                <a href="#" class="hover:underline">Messenger</a>
-                <a href="#" class="hover:underline">Facebook Lite</a>
-                <a href="#" class="hover:underline">Video</a>
-                <a href="#" class="hover:underline">Meta Pay</a>
-                <a href="#" class="hover:underline">Cửa hàng trên Meta</a>
-                <a href="#" class="hover:underline">Meta Quest</a>
-                <a href="#" class="hover:underline">Ray-Ban Meta</a>
-                <a href="#" class="hover:underline">Meta AI</a>
-                <a href="#" class="hover:underline">Trung tâm thông tin bỏ phiếu</a>
-                <a href="#" class="hover:underline">Chính sách quyền riêng tư</a>
-                <a href="#" class="hover:underline">Trung tâm quyền riêng tư</a>
-                <a href="#" class="hover:underline">Giới thiệu</a>
-                <a href="#" class="hover:underline">Tạo quảng cáo</a>
-                <a href="#" class="hover:underline">Lựa chọn quảng cáo</a>
-                <a href="#" class="hover:underline">Điều khoản</a>
-                <a href="#" class="hover:underline">Trợ giúp</a>
-                <a href="#" class="hover:underline">Tải thông tin liên hệ lên & đối tượng không phải người dùng</a>
-                <a href="#" class="hover:underline">Nội dung khác do Meta AI tạo</a>
-                <a href="#" class="hover:underline">Tạo Trang</a>
-                <a href="#" class="hover:underline">Nhà phát triển</a>
-            </div>
-
-            <!-- Copyright -->
-            <div class="mt-4 text-sm text-gray-600">
-                Meta © 2025
             </div>
         </div>
     </div>
