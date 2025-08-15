@@ -1,12 +1,13 @@
 <?php
 
-use Illuminate\Auth\Events\Lockout;
+use Livewire\Volt\Component;
+use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Str;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Auth\Events\Lockout;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Session;
-use Illuminate\Support\Facades\Str;
-use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Validate;
 use Livewire\Volt\Component;
@@ -120,7 +121,7 @@ new #[Layout('components.layouts.auth')] class extends Component {
                     @endif
                     <!-- Email Address -->
                     <div>
-                        <label for="email" class="block text-sm font-medium text-slate-800 mb-2">
+                        <label for="email" class="block text-sm font-semibold text-slate-900 mb-2">
                             Địa chỉ email
                         </label>
                         <div class="relative">
@@ -145,7 +146,7 @@ new #[Layout('components.layouts.auth')] class extends Component {
 
                     <!-- Password -->
                     <div>
-                        <label for="password" class="block text-sm font-medium text-slate-800 mb-2">
+                        <label for="password" class="block text-sm font-semibold text-slate-900 mb-2">
                             Mật khẩu
                         </label>
                         <div class="relative">

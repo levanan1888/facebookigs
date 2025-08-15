@@ -81,7 +81,7 @@ new #[Layout('components.layouts.auth')] class extends Component {
                     @endif
                     <!-- Name -->
                     <div>
-                        <label for="name" class="block text-sm font-medium text-slate-800 mb-2">
+                        <label for="name" class="block text-sm font-semibold text-slate-900 mb-2">
                             Họ và tên
                         </label>
                         <div class="relative">
@@ -106,7 +106,7 @@ new #[Layout('components.layouts.auth')] class extends Component {
 
                     <!-- Email Address -->
                     <div>
-                        <label for="email" class="block text-sm font-medium text-slate-800 mb-2">
+                        <label for="email" class="block text-sm font-semibold text-slate-900 mb-2">
                             Địa chỉ email
                         </label>
                         <div class="relative">
@@ -130,7 +130,7 @@ new #[Layout('components.layouts.auth')] class extends Component {
 
                     <!-- Password -->
                     <div>
-                        <label for="password" class="block text-sm font-medium text-slate-800 mb-2">
+                        <label for="password" class="block text-sm font-semibold text-slate-900 mb-2">
                             Mật khẩu
                         </label>
                         <div class="relative">
@@ -159,7 +159,7 @@ new #[Layout('components.layouts.auth')] class extends Component {
 
                     <!-- Confirm Password -->
                     <div>
-                        <label for="password_confirmation" class="block text-sm font-medium text-slate-800 mb-2">
+                        <label for="password_confirmation" class="block text-sm font-semibold text-slate-900 mb-2">
                             Xác nhận mật khẩu
                         </label>
                         <div class="relative">
