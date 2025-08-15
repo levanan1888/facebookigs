@@ -1,13 +1,12 @@
 <?php
 
-use Livewire\Volt\Component;
-use Illuminate\Validation\ValidationException;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Str;
-use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Auth\Events\Lockout;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Session;
+use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Validate;
 use Livewire\Volt\Component;
@@ -39,8 +38,7 @@ new #[Layout('components.layouts.auth')] class extends Component {
         }
 
         RateLimiter::clear($this->throttleKey());
-        // Regenerate session to prevent fixation after successful login
-        request()->session()->regenerate();
+        Session::regenerate();
 
         $this->redirectIntended(default: route('dashboard', absolute: false), navigate: true);
     }
@@ -71,7 +69,9 @@ new #[Layout('components.layouts.auth')] class extends Component {
      */
     protected function throttleKey(): string
     {
-        return Str::transliterate(Str::lower($this->email).'|'.request()->ip());
+        return function_exists('transliterator_transliterate')
+            ? Str::transliterate(Str::lower($this->email).'|'.request()->ip())
+            : Str::lower($this->email).'|'.request()->ip();
     }
 }; ?>
 
@@ -89,44 +89,39 @@ new #[Layout('components.layouts.auth')] class extends Component {
             </div>
         </div>
         
-        <!-- Brand Background -->
-        <div class="absolute inset-0 bg-white"></div>
+        <!-- Gradient Background -->
+        <div class="absolute inset-0 bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100"></div>
     </div>
 
     <div class="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 relative z-10">
         <div class="max-w-md w-full space-y-8">
             <!-- Logo and Header -->
             <div class="text-center">
-                <div class="mx-auto h-20 w-20 flex items-center justify-center rounded-2xl bg-[#1877F2] shadow-xl hover:shadow-2xl transition-all duration-300 transform hover:scale-105">
+                <div class="mx-auto h-20 w-20 flex items-center justify-center rounded-2xl bg-gradient-to-r from-sky-500 to-blue-600 shadow-xl hover:shadow-2xl transition-all duration-300 transform hover:scale-105">
                     <i class="fab fa-facebook text-white text-3xl"></i>
                 </div>
-                <h2 class="mt-6 text-3xl font-semibold text-slate-800">
+                <h2 class="mt-6 text-3xl font-semibold text-slate-900">
                     Chào mừng trở lại
                 </h2>
-                <p class="mt-2 text-lg text-slate-600 font-normal">
+                <p class="mt-2 text-lg text-slate-700 font-normal">
                     Đăng nhập vào tài khoản của bạn
                 </p>
             </div>
 
             <!-- Login Form -->
-            <div class="bg-white/80 backdrop-blur-xl py-8 px-6 shadow-2xl rounded-2xl border border-white/20">
+            <div class="bg-white py-8 px-6 shadow-2xl rounded-2xl border border-slate-200">
                 <!-- Session Status -->
                 <x-auth-session-status class="mb-4 text-center" :status="session('status')" />
 
                 <form method="POST" wire:submit="login" class="space-y-6">
-                    @if ($errors->any())
-                        <div class="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">
-                            {{ __('Thông tin đăng nhập không đúng. Vui lòng kiểm tra và thử lại.') }}
-                        </div>
-                    @endif
                     <!-- Email Address -->
                     <div>
-                        <label for="email" class="block text-sm font-semibold text-slate-900 mb-2">
+                        <label for="email" class="block text-sm font-medium text-slate-800 mb-2">
                             Địa chỉ email
                         </label>
                         <div class="relative">
                             <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                <i class="fas fa-envelope text-[#1877F2]"></i>
+                                <i class="fas fa-envelope text-sky-600"></i>
                             </div>
                             <input
                                 wire:model="email"
@@ -136,7 +131,7 @@ new #[Layout('components.layouts.auth')] class extends Component {
                                 autofocus
                                 autocomplete="email"
                                 placeholder="Nhập email của bạn"
-                                class="block w-full pl-10 pr-3 py-3 border border-slate-300 rounded-xl shadow-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-[#1877F2] focus:border-[#1877F2] transition-all duration-200 bg-white text-slate-900 font-normal"
+                                class="block w-full pl-10 pr-3 py-3 border border-slate-400 rounded-xl shadow-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-600 focus:border-sky-600 transition-all duration-200 bg-white text-slate-900 font-normal"
                             />
                         </div>
                         @error('email')
@@ -146,12 +141,12 @@ new #[Layout('components.layouts.auth')] class extends Component {
 
                     <!-- Password -->
                     <div>
-                        <label for="password" class="block text-sm font-semibold text-slate-900 mb-2">
+                        <label for="password" class="block text-sm font-medium text-slate-800 mb-2">
                             Mật khẩu
                         </label>
                         <div class="relative">
                             <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                <i class="fas fa-lock text-[#1877F2]"></i>
+                                <i class="fas fa-lock text-sky-600"></i>
                             </div>
                             <input
                                 wire:model="password"
@@ -160,13 +155,8 @@ new #[Layout('components.layouts.auth')] class extends Component {
                                 required
                                 autocomplete="current-password"
                                 placeholder="Nhập mật khẩu của bạn"
-                                class="block w-full pl-10 pr-12 py-3 border border-slate-300 rounded-xl shadow-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-[#1877F2] focus:border-[#1877F2] transition-all duration-200 bg-white text-slate-900 font-normal"
+                                class="block w-full pl-10 pr-3 py-3 border border-slate-400 rounded-xl shadow-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-600 focus:border-sky-600 transition-all duration-200 bg-white text-slate-900 font-normal"
                             />
-                            <button type="button" aria-label="Hiển thị mật khẩu" title="Hiển thị mật khẩu"
-                                onclick="const i=document.getElementById('password'); i.type = i.type==='password'?'text':'password'"
-                                class="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-500 hover:text-slate-700">
-                                <i class="fas fa-eye"></i>
-                            </button>
                         </div>
                         @error('password')
                             <p class="mt-1 text-sm text-red-600 font-medium">{{ $message }}</p>
@@ -180,15 +170,15 @@ new #[Layout('components.layouts.auth')] class extends Component {
                                 wire:model="remember"
                                 id="remember"
                                 type="checkbox"
-                                class="h-4 w-4 text-sky-600 focus:ring-sky-500 border-slate-300 rounded"
+                                class="h-4 w-4 text-sky-600 focus:ring-sky-600 border-slate-400 rounded"
                             />
-                            <label for="remember" class="ml-2 block text-sm text-slate-600 font-normal">
+                            <label for="remember" class="ml-2 block text-sm text-slate-700 font-normal">
                                 Ghi nhớ đăng nhập
                             </label>
                         </div>
 
                         @if (Route::has('password.request'))
-                            <a href="{{ route('password.request') }}" class="text-sm text-[#1877F2] hover:text-[#166FE5] font-medium underline underline-offset-2">
+                            <a href="{{ route('password.request') }}" class="text-sm text-sky-700 hover:text-sky-800 font-medium transition-colors duration-200">
                                 Quên mật khẩu?
                             </a>
                         @endif
@@ -198,10 +188,10 @@ new #[Layout('components.layouts.auth')] class extends Component {
                     <div>
                         <button
                             type="submit"
-                            class="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-semibold rounded-xl text-white bg-[#1877F2] hover:bg-[#166FE5] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#1877F2] transition-colors shadow-md"
+                            class="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-xl text-white bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-sky-600 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105"
                         >
                             <span class="absolute left-0 inset-y-0 flex items-center pl-3">
-                                <i class="fas fa-sign-in-alt text-blue-100 group-hover:text-white transition-colors"></i>
+                                <i class="fas fa-sign-in-alt text-sky-200 group-hover:text-sky-100 transition-colors duration-200"></i>
                             </span>
                             Đăng nhập
                         </button>
@@ -215,18 +205,18 @@ new #[Layout('components.layouts.auth')] class extends Component {
                             <div class="w-full border-t border-slate-300"></div>
                         </div>
                         <div class="relative flex justify-center text-sm">
-                            <span class="px-2 bg-white/80 text-slate-500 font-medium">Hoặc đăng nhập với</span>
+                            <span class="px-2 bg-white text-slate-600 font-medium">Hoặc đăng nhập với</span>
                         </div>
                     </div>
 
                     <!-- Social Login Buttons -->
                     <div class="mt-6 grid grid-cols-2 gap-3">
-                        <button class="w-full inline-flex justify-center py-2 px-4 border border-slate-300 rounded-xl shadow-sm bg-white text-sm font-medium text-slate-800 hover:bg-slate-50">
+                        <button class="w-full inline-flex justify-center py-2 px-4 border border-slate-300 rounded-xl shadow-sm bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 hover:border-sky-500 transition-all duration-200 transform hover:scale-105">
                             <i class="fab fa-google text-red-500"></i>
                             <span class="ml-2">Google</span>
                         </button>
 
-                        <button class="w-full inline-flex justify-center py-2 px-4 border border-slate-300 rounded-xl shadow-sm bg-white text-sm font-medium text-slate-800 hover:bg-slate-50">
+                        <button class="w-full inline-flex justify-center py-2 px-4 border border-slate-300 rounded-xl shadow-sm bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 hover:border-sky-500 transition-all duration-200 transform hover:scale-105">
                             <i class="fab fa-facebook text-blue-600"></i>
                             <span class="ml-2">Facebook</span>
                         </button>
@@ -236,9 +226,9 @@ new #[Layout('components.layouts.auth')] class extends Component {
                 <!-- Sign Up Link -->
                 @if (Route::has('register'))
                     <div class="mt-6 text-center">
-                        <p class="text-sm text-slate-800 font-normal">
+                        <p class="text-sm text-slate-700 font-normal">
                             Chưa có tài khoản? 
-                            <a href="{{ route('register') }}" class="text-[#1877F2] hover:text-[#166FE5] font-medium underline">
+                            <a href="{{ route('register') }}" class="text-sky-700 hover:text-sky-800 font-medium underline transition-colors duration-200">
                                 Đăng ký ngay
                             </a>
                         </p>
@@ -259,7 +249,7 @@ new #[Layout('components.layouts.auth')] class extends Component {
 
     .particle {
         position: absolute;
-        background: linear-gradient(135deg, #1877F2, #166FE5);
+        background: linear-gradient(135deg, #0ea5e9, #3b82f6);
         border-radius: 50%;
         opacity: 0.1;
         animation: float-particle 6s ease-in-out infinite;
@@ -321,7 +311,9 @@ new #[Layout('components.layouts.auth')] class extends Component {
         backdrop-filter: blur(24px);
     }
 
-    /* Reduce excessive transitions for accessibility */
-    .transition-all { transition: all 0.15s ease-in-out; }
+    /* Smooth Transitions */
+    * {
+        transition: all 0.2s ease-in-out;
+    }
     </style>
 </div>
