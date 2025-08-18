@@ -11,7 +11,10 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
-        //
+        $middleware->alias([
+            'track.login' => \App\Http\Middleware\TrackLoginActivity::class,
+            'permission.404' => \App\Http\Middleware\PermissionOr404::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //
