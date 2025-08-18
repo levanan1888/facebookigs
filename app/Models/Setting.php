@@ -27,6 +27,6 @@ class Setting extends Model
 
     public function getLogoUrl(): ?string
     {
-        return $this->logo_path ? Storage::url($this->logo_path) : null;
+        return $this->logo_path ? Storage::disk('public')->url($this->logo_path) : null;
     }
 }

@@ -1,7 +1,7 @@
 @php($setting = \App\Models\Setting::current())
 <div class="flex aspect-square size-9 items-center justify-center rounded-md bg-white text-blue-600 border border-blue-100">
     @if($setting && $setting->logo_path)
-        <img src="{{ Illuminate\Support\Facades\Storage::url($setting->logo_path) }}" alt="Logo" class="h-6" />
+        <img src="{{ Illuminate\Support\Facades\Storage::disk('public')->url($setting->logo_path) }}" alt="Logo" class="h-6" />
     @else
         <x-app-logo-icon class="size-5 fill-current" />
     @endif
