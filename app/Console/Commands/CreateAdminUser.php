@@ -63,3 +63,4 @@ class CreateAdminUser extends Command
         return 0;
     }
 }
+

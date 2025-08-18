@@ -27,3 +27,4 @@ class Permission extends SpatiePermission
         return $this->roles()->where('name', $role)->exists();
     }
 }
+

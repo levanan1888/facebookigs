@@ -27,3 +27,4 @@ class Role extends SpatieRole
         return $this->hasPermissionTo($permission);
     }
 }
+
