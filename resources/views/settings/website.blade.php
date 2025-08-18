@@ -3,7 +3,7 @@
         @php
             $initialName = old('site_name', $setting?->site_name ?? config('app.name'));
             $initialLogoUrl = ($setting && $setting->logo_path)
-                ? \Illuminate\Support\Facades\Storage::disk('public')->url($setting->logo_path)
+                ? \Illuminate\Support\Facades\URL::to('storage/' . ltrim($setting->logo_path, '/'))
                 : '';
         @endphp
         <div class="p-6" x-data='{ 
