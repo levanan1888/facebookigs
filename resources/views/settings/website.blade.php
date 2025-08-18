@@ -1,6 +1,16 @@
 <x-layouts.app.sidebar title="Thiết lập Website">
     <flux:main>
-        <div class="p-6" x-data="{ name: '{{ addslashes(old('site_name', $setting?->site_name ?? config('app.name'))) }}', logoPreview: '{{ ($setting && $setting->logo_path) ? \\Illuminate\\Support\\Facades\\Storage::url($setting->logo_path) : '' }}', handleLogo(e){const f=e.target.files[0]; if(!f) return; this.logoPreview=URL.createObjectURL(f);} }">
+        @php
+            $initialName = old('site_name', $setting?->site_name ?? config('app.name'));
+            $initialLogoUrl = ($setting && $setting->logo_path)
+                ? \Illuminate\Support\Facades\Storage::url($setting->logo_path)
+                : '';
+        @endphp
+        <div class="p-6" x-data='{ 
+            name: @js($initialName), 
+            logoPreview: @js($initialLogoUrl), 
+            handleLogo(e){ const f = e.target.files[0]; if(!f) return; this.logoPreview = URL.createObjectURL(f); } 
+        }'>
             @include('partials.settings-heading')
 
             @if(session('success'))
@@ -28,7 +38,7 @@
 
                 <div>
                     <label class="mb-1 block text-sm font-medium text-gray-700">Tên website</label>
-                    <input type="text" name="site_name" x-model="name" value="{{ old('site_name', $setting?->site_name ?? config('app.name')) }}" class="w-full rounded-md border-gray-300 focus:border-blue-500 focus:ring-blue-500" />
+                    <input type="text" name="site_name" x-model="name" value="{{ old('site_name', $initialName) }}" class="w-full rounded-md border-gray-300 focus:border-blue-500 focus:ring-blue-500" />
                     @error('site_name')
                         <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                     @enderror
