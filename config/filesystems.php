@@ -75,6 +75,8 @@ return [
 
     'links' => [
         public_path('storage') => storage_path('app/public'),
+        // Mapping bổ sung cho hosting dùng thư mục webroot là `public_html`
+        base_path('public_html/storage') => storage_path('app/public'),
     ],
 
 ];
