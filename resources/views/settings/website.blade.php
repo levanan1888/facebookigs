@@ -1,6 +1,6 @@
 <x-layouts.app.sidebar title="Thiết lập Website">
     <flux:main>
-        <div class="p-6" x-data="{ name: '{{ addslashes(old('site_name', $setting?->site_name ?? config('app.name'))) }}', logoPreview: '{{ ($setting && $setting->logo_path) ? asset('storage/'.$setting->logo_path) : '' }}', handleLogo(e){const f=e.target.files[0]; if(!f) return; this.logoPreview=URL.createObjectURL(f);} }">
+        <div class="p-6" x-data="{ name: '{{ addslashes(old('site_name', $setting?->site_name ?? config('app.name'))) }}', logoPreview: '{{ ($setting && $setting->logo_path) ? \\Illuminate\\Support\\Facades\\Storage::url($setting->logo_path) : '' }}', handleLogo(e){const f=e.target.files[0]; if(!f) return; this.logoPreview=URL.createObjectURL(f);} }">
             @include('partials.settings-heading')
 
             @if(session('success'))
