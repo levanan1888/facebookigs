@@ -66,8 +66,8 @@
             </div>
 
             <!-- Stats Cards -->
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 mb-8">
-                <div class="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 p-6 hover:shadow-lg transition-shadow duration-200">
+            <div class="flex flex-wrap gap-4 mb-8">
+                <div class="w-full sm:w-1/2 lg:w-1/6 bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 p-6 hover:shadow-lg transition-shadow duration-200">
                     <div class="flex flex-col items-center text-center">
                         <div class="p-3 bg-green-100 dark:bg-green-900 rounded-xl mb-3">
                             <svg class="w-8 h-8 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -79,7 +79,7 @@
                     </div>
                 </div>
 
-                <div class="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 p-6 hover:shadow-lg transition-shadow duration-200">
+                <div class="w-full sm:w-1/2 lg:w-1/6 bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 p-6 hover:shadow-lg transition-shadow duration-200">
                     <div class="flex flex-col items-center text-center">
                         <div class="p-3 bg-red-100 dark:bg-red-900 rounded-xl mb-3">
                             <svg class="w-8 h-8 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -91,7 +91,7 @@
                     </div>
                 </div>
 
-                <div class="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 p-6 hover:shadow-lg transition-shadow duration-200">
+                <div class="w-full sm:w-1/2 lg:w-1/6 bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 p-6 hover:shadow-lg transition-shadow duration-200">
                     <div class="flex flex-col items-center text-center">
                         <div class="p-3 bg-blue-100 dark:bg-blue-900 rounded-xl mb-3">
                             <svg class="w-8 h-8 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -103,7 +103,7 @@
                     </div>
                 </div>
 
-                <div class="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 p-6 hover:shadow-lg transition-shadow duration-200">
+                <div class="w-full sm:w-1/2 lg:w-1/6 bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 p-6 hover:shadow-lg transition-shadow duration-200">
                     <div class="flex flex-col items-center text-center">
                         <div class="p-3 bg-purple-100 dark:bg-purple-900 rounded-xl mb-3">
                             <svg class="w-8 h-8 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
