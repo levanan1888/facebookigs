@@ -315,19 +315,24 @@
                     </svg>
                     <span>Participants</span>
                 </a>
+                <a href="?tab=data-raw" class="flex items-center space-x-2 px-4 py-2 text-sm font-medium rounded-md {{ $activeTab == 'data-raw' ? 'text-white bg-blue-600' : 'text-blue-600 hover:bg-gray-100' }}">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+                    </svg>
+                    <span>Data Raw</span>
+                </a>
             </div>
         </div>
 
         <div class="p-6 space-y-6">
             @if($activeTab == 'growth')
-                <!-- Growth Tab Content -->
                 @include('dashboard.tabs.growth')
             @elseif($activeTab == 'engagement')
-                <!-- Engagement Tab Content -->
                 @include('dashboard.tabs.engagement')
             @elseif($activeTab == 'participants')
-                <!-- Participants Tab Content -->
                 @include('dashboard.tabs.participants')
+            @elseif($activeTab == 'data-raw')
+                @include('dashboard.tabs.data-raw')
             @endif
         </div>
     </div>

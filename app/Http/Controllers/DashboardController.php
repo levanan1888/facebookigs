@@ -4,12 +4,56 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Models\User;
+use App\Services\FacebookAdsService;
+use App\Services\FacebookAdsSyncService;
+use App\Models\FacebookBusiness;
+use App\Models\FacebookAdAccount;
+use App\Models\FacebookCampaign;
+use App\Models\FacebookAdSet;
+use App\Models\FacebookAd;
+use App\Models\FacebookInsight;
 
 class DashboardController extends Controller
 {
     public function index(Request $request)
     {
         $activeTab = $request->get('tab', 'growth');
+
+        // Facebook Ads raw data (for Data Raw tab)
+        $rawData = null;
+        $fbHierarchy = null;
+        if ($activeTab === 'data-raw') {
+            // KPI cho cấp quản lý
+            $totalsRaw = [
+                'businesses' => FacebookBusiness::query()->count(),
+                'accounts' => FacebookAdAccount::query()->count(),
+                'campaigns' => FacebookCampaign::query()->count(),
+                'adsets' => FacebookAdSet::query()->count(),
+                'ads' => FacebookAd::query()->count(),
+                'insights' => FacebookInsight::query()->count(),
+            ];
+
+            $latestInsights = FacebookInsight::query()
+                ->whereDate('date', now()->subDay()->toDateString())
+                ->selectRaw('level, COUNT(*) as total_rows, SUM(spend) as spend, SUM(impressions) as impressions, SUM(clicks) as clicks')
+                ->groupBy('level')
+                ->get()
+                ->keyBy('level');
+
+            $rawData = [
+                'totals' => $totalsRaw,
+                'yesterday' => [
+                    'account' => $latestInsights->get('account'),
+                    'adset' => $latestInsights->get('adset'),
+                    'ad' => $latestInsights->get('ad'),
+                ],
+                'businesses' => FacebookBusiness::withCount('adAccounts')->latest('created_time')->limit(20)->get(),
+                'accounts' => FacebookAdAccount::withCount('campaigns')->latest('id')->limit(50)->get(),
+                'campaigns' => FacebookCampaign::withCount('adSets')->latest('updated_time')->limit(100)->get(),
+                'adsets' => FacebookAdSet::withCount('ads')->latest('id')->limit(100)->get(),
+                'ads' => FacebookAd::query()->latest('updated_time')->limit(100)->get(),
+            ];
+        }
 
         // Weekly KPI Data (Growth tab)
         $weeklyKpis = [
@@ -299,7 +343,25 @@ class DashboardController extends Controller
             'weeklyData', 
             'totals',
             'engagementData',
-            'participantsData'
+            'participantsData',
+            'rawData',
+            'fbHierarchy'
         ));
+    }
+
+    public function syncFacebook(Request $request)
+    {
+        $api = new FacebookAdsService();
+        if (!$api->isConfigured()) {
+            return redirect()->route('dashboard', ['tab' => 'data-raw'])
+                ->with('error', 'Vui lòng cấu hình FACEBOOK_ADS_TOKEN trong .env');
+        }
+
+        $sync = new FacebookAdsSyncService($api);
+        $result = $sync->syncYesterday();
+
+        return redirect()->route('dashboard', ['tab' => 'data-raw'])
+            ->with('success', 'Đồng bộ thành công')
+            ->with('sync_result', $result);
     }
 } 

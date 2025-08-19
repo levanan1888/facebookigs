@@ -14,7 +14,7 @@
             <flux:navlist variant="outline">
                 <flux:navlist.group :heading="__('Facebook Group')" class="grid">
                     <flux:navlist.item icon="home" :href="route('dashboard')" :current="request()->routeIs('dashboard')" wire:navigate>{{ __('Performance Dashboard') }}</flux:navlist.item>
-                    <flux:navlist.item icon="chart-bar" href="#" :current="false">{{ __('Analytics') }}</flux:navlist.item>
+                    <flux:navlist.item icon="chart-bar" :href="route('analytics')" :current="request()->routeIs('analytics')" wire:navigate>{{ __('Analytics') }}</flux:navlist.item>
                     <flux:navlist.item icon="users" href="#" :current="false">{{ __('Members') }}</flux:navlist.item>
                     <flux:navlist.item icon="document-text" href="#" :current="false">{{ __('Posts') }}</flux:navlist.item>
                 </flux:navlist.group>

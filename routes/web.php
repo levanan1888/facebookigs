@@ -11,6 +11,41 @@ Route::get('dashboard', [App\Http\Controllers\DashboardController::class, 'index
     ->middleware(['auth', 'verified'])
     ->name('dashboard');
 
+// Analytics overview + APIs
+Route::middleware(['auth', 'verified'])->group(function () {
+    Route::get('analytics', [App\Http\Controllers\AnalyticsController::class, 'index'])
+        ->middleware(['permission.404:dashboard.analytics'])
+        ->name('analytics');
+
+    Route::prefix('api/analytics')->name('api.analytics.')->group(function () {
+        Route::get('options', [App\Http\Controllers\AnalyticsController::class, 'options'])
+            ->middleware(['permission.404:analytics.options'])
+            ->name('options');
+        Route::get('summary', [App\Http\Controllers\AnalyticsController::class, 'summary'])
+            ->middleware(['permission.404:analytics.summary'])
+            ->name('summary');
+        Route::get('breakdown', [App\Http\Controllers\AnalyticsController::class, 'breakdown'])
+            ->middleware(['permission.404:analytics.breakdown'])
+            ->name('breakdown');
+        Route::get('series', [App\Http\Controllers\AnalyticsController::class, 'series'])
+            ->middleware(['permission.404:analytics.series'])
+            ->name('series');
+        Route::get('ad-details', [App\Http\Controllers\AnalyticsController::class, 'adDetails'])
+            ->middleware(['permission.404:analytics.ad-details'])
+            ->name('ad-details');
+    });
+});
+
+Route::post('dashboard/sync-facebook', [App\Http\Controllers\DashboardController::class, 'syncFacebook'])
+    ->middleware(['auth', 'verified', 'permission.404:facebook.sync'])
+    ->name('dashboard.sync-facebook');
+
+// API for async sync progress
+Route::middleware(['auth', 'verified', 'permission.404:facebook.sync'])->prefix('api')->group(function () {
+    Route::post('sync/facebook/start', [App\Http\Controllers\Api\SyncController::class, 'start'])->name('api.sync.facebook.start');
+    Route::get('sync/facebook/status/{id}', [App\Http\Controllers\Api\SyncController::class, 'status'])->name('api.sync.facebook.status');
+});
+
 // Test route để kiểm tra trang 404
 Route::get('/test-404', function () {
     abort(404);

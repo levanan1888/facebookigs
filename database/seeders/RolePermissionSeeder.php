@@ -40,6 +40,21 @@ class RolePermissionSeeder extends Seeder
             // Dashboard
             'dashboard.view',
             'dashboard.analytics',
+            // Analytics filter UI permission
+            'analytics.filter',
+            // Filter fields granular
+            'analytics.filter.time',
+            'analytics.filter.scope',
+            'analytics.filter.metrics',
+            'analytics.filter.sort',
+            // Analytics API granular
+            'analytics.options',
+            'analytics.summary',
+            'analytics.breakdown',
+            'analytics.series',
+            'analytics.ad-details',
+            // Facebook sync
+            'facebook.sync',
             
             // Settings
             'settings.view',
@@ -60,20 +75,18 @@ class RolePermissionSeeder extends Seeder
         // Gán permissions cho Super Admin (tất cả quyền)
         $superAdmin->givePermissionTo(Permission::all());
 
-        // Gán permissions cho Admin
-        $admin->givePermissionTo([
-            'user.view', 'user.create', 'user.edit',
-            'role.view', 'role.create', 'role.edit',
-            'permission.view',
-            'dashboard.view', 'dashboard.analytics',
-            'settings.view', 'settings.edit', 'manage settings',
-        ]);
+        // Gán full quyền cho Admin
+        $admin->syncPermissions(Permission::all());
 
         // Gán permissions cho Manager
         $manager->givePermissionTo([
             'user.view', 'user.edit',
             'dashboard.view', 'dashboard.analytics',
+            'analytics.filter', 'analytics.filter.time', 'analytics.filter.scope', 'analytics.filter.metrics', 'analytics.filter.sort',
+            'analytics.options', 'analytics.summary', 'analytics.breakdown', 'analytics.series', 'analytics.ad-details',
             'settings.view',
+            // Quản lý có thể đồng bộ nếu cần
+            'facebook.sync',
         ]);
 
         // Gán permissions cho User
