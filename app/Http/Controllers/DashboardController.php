@@ -395,4 +395,20 @@ class DashboardController extends Controller
             ],
         ];
     }
+
+    public function syncFacebook(Request $request)
+    {
+        $api = new FacebookAdsService();
+        if (!$api->isConfigured()) {
+            return redirect()->route('dashboard', ['tab' => 'data-raw'])
+                ->with('error', 'Vui lòng cấu hình FACEBOOK_ADS_TOKEN trong .env');
+        }
+
+        $sync = new FacebookAdsSyncService($api);
+        $result = $sync->syncYesterday();
+
+        return redirect()->route('dashboard', ['tab' => 'data-raw'])
+            ->with('success', 'Đồng bộ thành công')
+            ->with('sync_result', $result);
+    }
 } 
