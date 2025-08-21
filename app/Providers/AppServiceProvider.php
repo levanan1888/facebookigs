@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Facades\Blade;
+use Spatie\Permission\Models\Permission as SpatiePermission;
 use Illuminate\Support\Facades\View;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
@@ -33,7 +34,7 @@ class AppServiceProvider extends ServiceProvider
         });
 
         Blade::directive('permission', function ($permission) {
-            return "<?php if(auth()->check() && auth()->user()->hasPermissionTo({$permission})): ?>";
+            return "<?php if(auth()->check() && \\Spatie\\Permission\\Models\\Permission::where('name', {$permission})->exists() && auth()->user()->can({$permission})): ?>";
         });
 
         Blade::directive('endpermission', function () {

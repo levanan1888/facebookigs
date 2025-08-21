@@ -12,11 +12,27 @@
             </a>
 
             <flux:navlist variant="outline">
-                <flux:navlist.group :heading="__('Facebook Group')" class="grid">
-                    <flux:navlist.item icon="home" :href="route('dashboard')" :current="request()->routeIs('dashboard')" wire:navigate>{{ __('Performance Dashboard') }}</flux:navlist.item>
-                    <flux:navlist.item icon="chart-bar" href="#" :current="false">{{ __('Analytics') }}</flux:navlist.item>
-                    <flux:navlist.item icon="users" href="#" :current="false">{{ __('Members') }}</flux:navlist.item>
-                    <flux:navlist.item icon="document-text" href="#" :current="false">{{ __('Posts') }}</flux:navlist.item>
+                <flux:navlist.group :heading="__('Dashboard')" class="grid">
+                    @can('dashboard.view')
+                        <flux:navlist.item icon="home" :href="route('dashboard')" :current="request()->routeIs('dashboard')" wire:navigate>{{ __('Overview (All Platforms)') }}</flux:navlist.item>
+                    @endcan
+                </flux:navlist.group>
+            </flux:navlist>
+
+            <flux:navlist variant="outline">
+                <flux:navlist.group :heading="__('Facebook')" class="grid">
+                    @can('facebook.overview')
+                        <flux:navlist.item icon="layout-grid" :href="route('facebook.overview')" :current="request()->routeIs('facebook.overview')" wire:navigate>{{ __('Facebook Overview') }}</flux:navlist.item>
+                    @endcan
+                    @can('facebook.hierarchy')
+                        <flux:navlist.item icon="layout-grid" :href="route('facebook.hierarchy')" :current="request()->routeIs('facebook.hierarchy')" wire:navigate>{{ __('Hierarchy') }}</flux:navlist.item>
+                    @endcan
+                    @can('facebook.analytics')
+                        <flux:navlist.item icon="chart-bar" :href="route('facebook.analytics')" :current="request()->routeIs('facebook.analytics')" wire:navigate>{{ __('Analytics') }}</flux:navlist.item>
+                    @endcan
+                    @can('facebook.data_raw')
+                        <flux:navlist.item icon="document-text" :href="route('facebook.data-raw')" :current="request()->routeIs('facebook.data-raw')" wire:navigate>{{ __('Data Raw') }}</flux:navlist.item>
+                    @endcan
                 </flux:navlist.group>
             </flux:navlist>
 

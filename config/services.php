@@ -14,6 +14,13 @@ return [
     |
     */
 
+    'mailgun' => [
+        'domain' => env('MAILGUN_DOMAIN'),
+        'secret' => env('MAILGUN_SECRET'),
+        'endpoint' => env('MAILGUN_ENDPOINT', 'api.mailgun.net'),
+        'scheme' => 'https',
+    ],
+
     'postmark' => [
         'token' => env('POSTMARK_TOKEN'),
     ],
@@ -24,15 +31,29 @@ return [
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
 
-    'resend' => [
-        'key' => env('RESEND_KEY'),
+    'facebook' => [
+        'ads_token' => env('FACEBOOK_ADS_TOKEN'),
+        'app_id' => env('FACEBOOK_APP_ID'),
+        'app_secret' => env('FACEBOOK_APP_SECRET'),
+        'api_version' => env('FACEBOOK_API_VERSION', 'v18.0'),
+        'graph_url' => env('FACEBOOK_GRAPH_URL', 'https://graph.facebook.com'),
+        'batch_size' => env('FACEBOOK_BATCH_SIZE', 100),
+        'timeout' => env('FACEBOOK_TIMEOUT', 30),
+        'retry_attempts' => env('FACEBOOK_RETRY_ATTEMPTS', 3),
     ],
 
-    'slack' => [
-        'notifications' => [
-            'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),
-            'channel' => env('SLACK_BOT_USER_DEFAULT_CHANNEL'),
-        ],
+    'google' => [
+        'ads_client_id' => env('GOOGLE_ADS_CLIENT_ID'),
+        'ads_client_secret' => env('GOOGLE_ADS_CLIENT_SECRET'),
+        'ads_refresh_token' => env('GOOGLE_ADS_REFRESH_TOKEN'),
+        'ads_developer_token' => env('GOOGLE_ADS_DEVELOPER_TOKEN'),
+        'ads_login_customer_id' => env('GOOGLE_ADS_LOGIN_CUSTOMER_ID'),
+    ],
+
+    'tiktok' => [
+        'ads_app_id' => env('TIKTOK_ADS_APP_ID'),
+        'ads_secret' => env('TIKTOK_ADS_SECRET'),
+        'ads_access_token' => env('TIKTOK_ADS_ACCESS_TOKEN'),
     ],
 
 ];

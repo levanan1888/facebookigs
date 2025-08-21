@@ -1,5 +1,5 @@
 ---
-description: "Laravel 12 PHP 8.2 coding conventions & best practices"
+description: "Laravel 11 PHP 8.2 coding conventions & best practices"
 globs: 
   - "app/**/*.php"
   - "routes/**/*.php"
@@ -13,7 +13,7 @@ alwaysApply: true
   "framework": "laravel",
   "style": {
     "php_version": "8.2",
-    "laravel_version": "12",
+    "laravel_version": "11",
     "coding_standard": "PSR-12",
     "naming": {
       "classes": "StudlyCase",
@@ -34,7 +34,7 @@ alwaysApply: true
     "models": "chỉ khai báo quan hệ, casts, fillable",
     "requests": "dùng để validate dữ liệu đầu vào",
     "resources": "dùng để format response JSON",
-    "migrations": "tách riêng, có chú thích rõ ràng"
+    "migrations": "tách riêng, có chú thích rõ ràng, đặt tên file migration theo cú pháp chuẩn `YYYY_MM_DD_HHMMSS_name_of_migration` để đảm bảo migration được chạy theo thứ tự thời gian; tránh chỉnh sửa file migration cũ đã deploy."
   },
   "best_practices": {
     "security": [
