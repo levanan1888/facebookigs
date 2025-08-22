@@ -237,3 +237,4 @@ Sau khi debug, bạn sẽ hiểu rõ:
 - Cách xử lý từng loại ad khác nhau
 
 Điều này giúp bạn tối ưu hóa service và đảm bảo lưu đúng data vào database!
+

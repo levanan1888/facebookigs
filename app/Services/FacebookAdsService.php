@@ -130,7 +130,7 @@ class FacebookAdsService
         $url = "https://graph.facebook.com/{$this->apiVersion}/{$adSetId}/ads";
         $params = [
             'access_token' => $this->accessToken,
-            'fields' => 'id,name,status,effective_status,creative{id,title,body,object_story_spec,link_data,object_story_id,effective_object_story_id},created_time,updated_time,object_story_id,effective_object_story_id'
+            'fields' => 'id,name,status,effective_status,creative{id,title,body,object_story_spec,object_story_id,effective_object_story_id},created_time,updated_time,object_story_id,effective_object_story_id'
         ];
 
         $response = Http::get($url, $params);
@@ -159,7 +159,16 @@ class FacebookAdsService
             return $response->json();
         }
 
-        return ['error' => $response->json()];
+        // Log chi tiết lỗi để debug
+        $errorData = $response->json();
+        Log::error("Facebook API error khi lấy post details", [
+            'post_id' => $postId,
+            'url' => $url,
+            'status' => $response->status(),
+            'response' => $errorData
+        ]);
+
+        return ['error' => $errorData];
     }
 
     /**
@@ -170,7 +179,8 @@ class FacebookAdsService
         $url = "https://graph.facebook.com/{$this->apiVersion}/{$postId}/insights";
         $params = [
             'access_token' => $this->accessToken,
-            'fields' => 'impressions,reach,clicks,unique_clicks,likes,shares,comments,reactions,saves,hides,hide_all_clicks,unlikes,negative_feedback,video_views,video_view_time,video_avg_time_watched,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p95_watched_actions,video_p100_watched_actions,engagement_rate,ctr,cpm,cpc,spend,frequency,actions,action_values,cost_per_action_type,cost_per_unique_action_type,breakdowns',
+            // Lưu ý: Likes/Comments/Shares không có trong insights; dùng edges riêng để đếm
+            'fields' => 'impressions,reach,clicks,unique_clicks,reactions,saves,hides,hide_all_clicks,unlikes,negative_feedback,video_views,video_view_time,video_avg_time_watched,engagement_rate,ctr,cpm,cpc,spend,frequency,actions,action_values,cost_per_action_type,cost_per_unique_action_type,breakdowns',
             'date_preset' => 'last_5y',
             'period' => 'day'
         ];
@@ -182,6 +192,56 @@ class FacebookAdsService
         }
 
         return ['error' => $response->json()];
+    }
+
+    /**
+     * Lấy số reactions, comments, shares của một post.
+     * Cần Page Access Token hoặc quyền phù hợp (pages_read_engagement hoặc Page Public Content Access).
+     */
+    public function getPostEngagementCounts(string $postId): array
+    {
+        // Reactions count
+        $reactionsUrl = "https://graph.facebook.com/{$this->apiVersion}/{$postId}/reactions";
+        $reactionsResp = Http::get($reactionsUrl, [
+            'access_token' => $this->accessToken,
+            'summary' => 'true',
+            'limit' => 0,
+        ]);
+
+        // Comments count
+        $commentsUrl = "https://graph.facebook.com/{$this->apiVersion}/{$postId}/comments";
+        $commentsResp = Http::get($commentsUrl, [
+            'access_token' => $this->accessToken,
+            'summary' => 'true',
+            'filter' => 'toplevel',
+            'limit' => 0,
+        ]);
+
+        // Shares count (lấy qua field shares.summary)
+        $sharesUrl = "https://graph.facebook.com/{$this->apiVersion}/{$postId}";
+        $sharesResp = Http::get($sharesUrl, [
+            'access_token' => $this->accessToken,
+            'fields' => 'shares',
+        ]);
+
+        $reactions = $reactionsResp->successful() ? ($reactionsResp->json()['summary']['total_count'] ?? 0) : 0;
+        $comments = $commentsResp->successful() ? ($commentsResp->json()['summary']['total_count'] ?? 0) : 0;
+        $shares = 0;
+        if ($sharesResp->successful()) {
+            $sharesData = $sharesResp->json();
+            $shares = isset($sharesData['shares']['count']) ? (int) $sharesData['shares']['count'] : 0;
+        }
+
+        return [
+            'reactions' => (int) $reactions,
+            'comments' => (int) $comments,
+            'shares' => (int) $shares,
+            'raw' => [
+                'reactions' => $reactionsResp->json(),
+                'comments' => $commentsResp->json(),
+                'shares' => $sharesResp->json(),
+            ],
+        ];
     }
 
     /**
@@ -237,7 +297,7 @@ class FacebookAdsService
         $url = "https://graph.facebook.com/{$this->apiVersion}/{$adId}/insights";
         $params = [
             'access_token' => $this->accessToken,
-            'fields' => 'spend,reach,impressions,clicks,ctr,cpc,cpm,frequency,unique_clicks,actions,action_values,purchase_roas',
+            'fields' => 'spend,reach,impressions,clicks,ctr,cpc,cpm,frequency,unique_clicks,actions,action_values,purchase_roas,ad_name,ad_id',
             'time_range' => json_encode([
                 'since' => date('Y-m-d', strtotime('-36 months')),
                 'until' => date('Y-m-d')

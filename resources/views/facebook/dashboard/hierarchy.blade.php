@@ -86,6 +86,35 @@ class FacebookHierarchy {
         this.loadBusinesses();
     }
 
+    async fetchJson(url, options = {}) {
+        const defaultHeaders = {
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+        };
+        const response = await fetch(url, {
+            credentials: 'same-origin',
+            headers: { ...(options.headers || {}), ...defaultHeaders },
+            ...options,
+        });
+
+        const contentType = response.headers.get('content-type') || '';
+
+        if (!response.ok) {
+            // Try to read response text for diagnostics (may be HTML)
+            let bodyText = '';
+            try { bodyText = await response.text(); } catch (_) {}
+            const message = `HTTP ${response.status} - ${response.statusText}`;
+            throw new Error(message);
+        }
+
+        if (!contentType.includes('application/json')) {
+            // Avoid parsing HTML as JSON (common when redirected to login/403 page)
+            throw new Error('Phản hồi không phải JSON (có thể bị chuyển hướng hoặc lỗi quyền truy cập)');
+        }
+
+        return response.json();
+    }
+
     bindEvents() {
         document.querySelectorAll('.hierarchy-nav').forEach(btn => {
             btn.addEventListener('click', (e) => {
@@ -131,8 +160,7 @@ class FacebookHierarchy {
     async loadBusinesses() {
         this.showLoading();
         try {
-            const response = await fetch('/api/hierarchy/businesses');
-            const data = await response.json();
+            const data = await this.fetchJson('/api/hierarchy/businesses');
             if (data.error) return this.renderError(data.error);
             this.renderBusinesses(data);
         } catch (error) {
@@ -205,8 +233,7 @@ class FacebookHierarchy {
     async loadAccounts() {
         this.showLoading();
         try {
-            const response = await fetch(`/api/hierarchy/accounts?businessId=${this.currentFilters.businessId}`);
-            const data = await response.json();
+            const data = await this.fetchJson(`/api/hierarchy/accounts?businessId=${this.currentFilters.businessId}`);
             if (data.error) return this.renderError(data.error);
             this.renderAccounts(data);
         } catch (error) { this.renderError('Lỗi khi tải tài khoản quảng cáo: ' + error.message); }
@@ -291,10 +318,7 @@ class FacebookHierarchy {
     async loadCampaigns() {
         this.showLoading();
         try {
-            const ym = new Date();
-            const month = ym.toISOString().slice(0,7);
-            const response = await fetch(`/api/hierarchy/campaigns?accountId=${this.currentFilters.accountId}&month=${month}`);
-            const result = await response.json();
+            const result = await this.fetchJson(`/api/hierarchy/campaigns?accountId=${this.currentFilters.accountId}`);
             if (result.error) return this.renderError(result.error);
             if (result.success && result.data) this.renderCampaigns(result.data);
             else this.renderError('Không có dữ liệu campaigns');
@@ -330,6 +354,8 @@ class FacebookHierarchy {
                             <th class="px-4 py-3 text-left">Impr</th>
                             <th class="px-4 py-3 text-left">Clicks</th>
                             <th class="px-4 py-3 text-left">CTR</th>
+                            <th class="px-4 py-3 text-left">CPC</th>
+                            <th class="px-4 py-3 text-left">CPM</th>
                             <th class="px-4 py-3 text-left">Ad Sets</th>
                             <th class="px-4 py-3 text-left">Ngày bắt đầu</th>
                             <th class="px-4 py-3 text-left">Hành động</th>
@@ -345,10 +371,12 @@ class FacebookHierarchy {
                                     </span>
                                 </td>
                                 <td class="px-4 py-3">${campaign.objective || 'Không xác định'}</td>
-                                <td class="px-4 py-3">${(campaign.kpi?.spend ?? 0).toLocaleString()}</td>
-                                <td class="px-4 py-3">${(campaign.kpi?.impressions ?? 0).toLocaleString()}</td>
-                                <td class="px-4 py-3">${(campaign.kpi?.clicks ?? 0).toLocaleString()}</td>
-                                <td class="px-4 py-3">${campaign.kpi?.ctr ? Number(campaign.kpi.ctr).toFixed(2) + '%' : '-'}</td>
+                                <td class="px-4 py-3">$${Number(campaign.total_spend ?? 0).toFixed(2)}</td>
+                                <td class="px-4 py-3">${Number(campaign.total_impressions ?? 0).toLocaleString()}</td>
+                                <td class="px-4 py-3">${Number(campaign.total_clicks ?? 0).toLocaleString()}</td>
+                                <td class="px-4 py-3">${campaign.avg_ctr ? Number(campaign.avg_ctr).toFixed(2) + '%' : '-'}</td>
+                                <td class="px-4 py-3">${campaign.avg_cpc ? '$' + Number(campaign.avg_cpc).toFixed(4) : '-'}</td>
+                                <td class="px-4 py-3">${campaign.avg_cpm ? '$' + Number(campaign.avg_cpm).toFixed(4) : '-'}</td>
                                 <td class="px-4 py-3">${campaign.ad_sets_count || 0}</td>
                                 <td class="px-4 py-3">${campaign.start_time ? new Date(campaign.start_time).toLocaleDateString('vi-VN') : '-'}</td>
                                 <td class="px-4 py-3">
@@ -388,8 +416,7 @@ class FacebookHierarchy {
         try {
             const ym = new Date();
             const month = ym.toISOString().slice(0,7);
-            const response = await fetch(`/api/hierarchy/adsets?campaignId=${this.currentFilters.campaignId}&month=${month}`);
-            const result = await response.json();
+            const result = await this.fetchJson(`/api/hierarchy/adsets?campaignId=${this.currentFilters.campaignId}&month=${month}`);
             if (result.error) return this.renderError('Lỗi khi tải Ad Sets: ' + result.error);
             if (result.success && result.data) this.renderAdSets(result.data);
             else if (Array.isArray(result)) this.renderAdSets(result);
@@ -430,14 +457,14 @@ class FacebookHierarchy {
                                     </span>
                                 </td>
                                 <td class="px-4 py-3">${adset.optimization_goal ?? '-'}</td>
-                                <td class="px-4 py-3">$${((adset.kpi?.spend) ?? 0).toLocaleString()}</td>
-                                <td class="px-4 py-3">${((adset.kpi?.impressions) ?? 0).toLocaleString()}</td>
-                                <td class="px-4 py-3">${((adset.kpi?.clicks) ?? 0).toLocaleString()}</td>
-                                <td class="px-4 py-3">${((adset.kpi?.reach) ?? 0).toLocaleString()}</td>
-                                <td class="px-4 py-3">${adset.kpi?.ctr ? (Number(adset.kpi.ctr).toFixed(2) + '%') : '-'}</td>
-                                <td class="px-4 py-3">${adset.kpi?.cpc ? ('$' + Number(adset.kpi.cpc).toFixed(2)) : '-'}</td>
-                                <td class="px-4 py-3">${adset.kpi?.cpm ? ('$' + Number(adset.kpi.cpm).toFixed(2)) : '-'}</td>
-                                <td class="px-4 py-3">${adset.kpi?.ads_count ?? 0}</td>
+                                <td class="px-4 py-3">$${((adset.total_spend ?? 0) / 100).toFixed(2)}</td>
+                                <td class="px-4 py-3">${(adset.total_impressions ?? 0).toLocaleString()}</td>
+                                <td class="px-4 py-3">${(adset.total_clicks ?? 0).toLocaleString()}</td>
+                                <td class="px-4 py-3">${(adset.total_reach ?? 0).toLocaleString()}</td>
+                                <td class="px-4 py-3">${adset.avg_ctr ? (Number(adset.avg_ctr).toFixed(2) + '%') : '-'}</td>
+                                <td class="px-4 py-3">${adset.avg_cpc ? ('$' + Number(adset.avg_cpc).toFixed(2)) : '-'}</td>
+                                <td class="px-4 py-3">${adset.avg_cpm ? ('$' + Number(adset.avg_cpm).toFixed(2)) : '-'}</td>
+                                <td class="px-4 py-3">${adset.ads_count ?? 0}</td>
                                 <td class="px-4 py-3">
                                     <button class="view-posts text-blue-600 hover:text-blue-800 text-sm font-medium" data-adset-id="${adset.id}" data-adset-name="${adset.name}">
                                         View Posts →
@@ -467,9 +494,10 @@ class FacebookHierarchy {
             if (this.currentFilters.adsetId) params.append('adsetId', this.currentFilters.adsetId);
             else if (this.currentFilters.campaignId) params.append('campaignId', this.currentFilters.campaignId);
             else if (this.currentFilters.accountId) params.append('accountId', this.currentFilters.accountId);
-            const response = await fetch(url + params.toString());
-            const data = await response.json();
-            this.renderPosts(data);
+            const result = await this.fetchJson(url + params.toString());
+            if (result.error) return this.renderError('Lỗi khi tải Posts: ' + result.error);
+            const posts = Array.isArray(result) ? result : (result.data || []);
+            this.renderPosts(posts);
         } catch (error) { this.renderError('Error loading posts'); }
         finally { this.hideLoading(); }
     }
@@ -495,71 +523,56 @@ class FacebookHierarchy {
                     </thead>
                     <tbody>
                         ${posts.map(post => {
-                            const totalEngagement = post.likes_count + post.shares_count + post.comments_count;
+                            const likes = (post.post_likes || 0);
+                            const shares = (post.post_shares || 0);
+                            const comments = (post.post_comments || 0);
+                            const totalEngagement = likes + shares + comments;
+                            const impressions = (post.ad_impressions || 0);
+                            const reach = (post.ad_reach || 0);
+                            const clicks = (post.ad_clicks || 0);
+                            const postIdText = post.post_id ? (typeof post.post_id === 'string' ? post.post_id : JSON.stringify(post.post_id)) : '';
+                            const pageIdText = post.page_id ? (typeof post.page_id === 'string' ? post.page_id : JSON.stringify(post.page_id)) : '';
+                            const fallbackLink = (pageIdText && postIdText) ? `https://www.facebook.com/${pageIdText.replace(/\"/g,'').replace(/"/g,'')}/posts/${postIdText.replace(/\"/g,'').replace(/"/g,'')}` : null;
+                            const permalink = post.post_permalink_url || fallbackLink;
                             return `
                                 <tr class="border-t hover:bg-gray-50">
                                     <td class="px-4 py-3">
-                                        <div class="font-medium">${post.message ? post.message.substring(0, 50) + '...' : 'No message'}</div>
-                                        <div class="text-xs text-gray-500 font-mono">${post.post_id}</div>
-                                        <div class="text-xs text-gray-500">${new Date(post.created_time).toLocaleDateString()}</div>
+                                        <div class="font-medium">${post.post_message ? (post.post_message.length>80?post.post_message.substring(0,80)+'...':post.post_message) : (post.creative_link_message || post.creative_link_name || 'No message')}</div>
+                                        ${post.post_id ? `<div class=\"text-xs text-gray-500 font-mono\">${postIdText}</div>` : ''}
+                                        ${post.post_created_time ? `<div class=\"text-xs text-gray-500\">${new Date(post.post_created_time).toLocaleDateString('vi-VN')}</div>` : ''}
                                     </td>
                                     <td class="px-4 py-3">
-                                        <div class="font-medium">${post.page_name}</div>
-                                        <div class="text-xs text-gray-500">${post.page_id}</div>
+                                        <div class="text-xs text-gray-500 font-mono">${pageIdText || '-'}</div>
                                     </td>
                                     <td class="px-4 py-3">
                                         <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                                            ${post.type}
+                                            ${post.post_id ? 'Post Ad' : (post.creative_link_url ? 'Link Ad' : 'Standard')}
                                         </span>
                                     </td>
                                     <td class="px-4 py-3">
                                         <div class="text-sm">
-                                            <div>👍 ${post.likes_count.toLocaleString()}</div>
-                                            <div>🔄 ${post.shares_count.toLocaleString()}</div>
-                                            <div>💬 ${post.comments_count.toLocaleString()}</div>
+                                            <div>👍 ${likes.toLocaleString()}</div>
+                                            <div>🔄 ${shares.toLocaleString()}</div>
+                                            <div>💬 ${comments.toLocaleString()}</div>
                                             <div class="font-medium">Total: ${totalEngagement.toLocaleString()}</div>
                                         </div>
                                     </td>
                                     <td class="px-4 py-3">
                                         <div class="text-sm">
-                                            <div>👁️ ${post.impressions.toLocaleString()}</div>
-                                            <div>🎯 ${post.reach.toLocaleString()}</div>
-                                            <div>🖱️ ${post.clicks.toLocaleString()}</div>
-                                            ${post.engagement_rate ? `<div>📊 ${post.engagement_rate}%</div>` : ''}
+                                            <div>👁️ ${impressions.toLocaleString()}</div>
+                                            <div>🎯 ${reach.toLocaleString()}</div>
+                                            <div>🖱️ ${clicks.toLocaleString()}</div>
                                         </div>
                                     </td>
                                     <td class="px-4 py-3">
-                                        ${post.is_promoted ? `
-                                            <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                                Promoted
-                                            </span>
-                                            ${post.ad_name ? `<div class="text-xs text-gray-500 mt-1">Ad: ${post.ad_name}</div>` : ''}
-                                            ${post.campaign_name ? `<div class="text-xs text-gray-500">Campaign: ${post.campaign_name}</div>` : ''}
-                                        ` : `
-                                            <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                                Organic
-                                            </span>
-                                        `}
+                                        <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${post.status === 'ACTIVE' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}">
+                                            ${post.status || '-'}
+                                        </span>
                                     </td>
                                     <td class="px-4 py-3">
                                         <div class="space-y-1">
-                                            <div>
-                                                <a href="${post.post_link}" target="_blank" class="text-blue-600 hover:text-blue-800 text-xs block">
-                                                    📝 View Post
-                                                </a>
-                                            </div>
-                                            <div>
-                                                <a href="${post.page_link}" target="_blank" class="text-blue-600 hover:text-blue-800 text-xs block">
-                                                    📄 View Page
-                                                </a>
-                                            </div>
-                                            ${post.permalink_url ? `
-                                                <div>
-                                                    <a href="${post.permalink_url}" target="_blank" class="text-blue-600 hover:text-blue-800 text-xs block">
-                                                        🔗 Permalink
-                                                    </a>
-                                                </div>
-                                            ` : ''}
+                                            ${permalink ? `<a href=\"${permalink}\" target=\"_blank\" class=\"text-blue-600 hover:text-blue-800 text-xs block\">🔗 View Post</a>` : ''}
+                                            ${post.creative_link_url ? `<a href=\"${post.creative_link_url}\" target=\"_blank\" class=\"text-blue-600 hover:text-blue-800 text-xs block\">🌐 Link</a>` : ''}
                                         </div>
                                     </td>
                                 </tr>

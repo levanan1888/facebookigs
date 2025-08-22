@@ -179,11 +179,7 @@ class TestFacebookSyncDirect extends Command
             $adInsights = $api->getInsightsForAdsBatch([$firstAd['id']]);
             $adInsightsData = $adInsights[$firstAd['id']] ?? null;
             
-            // Debug: In ra raw response
-            $this->info("🔍 Raw Response:");
-            dump($adInsights);
-            
-            $this->info("📊 Ad Insights Response:");
+                        $this->info("📊 Ad Insights Response:");
             $this->table(
                 ['Field', 'Value'],
                 [
@@ -302,7 +298,8 @@ class TestFacebookSyncDirect extends Command
                 if (!empty($progress['errors'])) {
                     $this->warn('⚠️  Có lỗi xảy ra:');
                     foreach ($progress['errors'] as $error) {
-                        $this->error("  - {$error['stage']}: {$error['error']}");
+                        $errorMessage = is_array($error['error']) ? json_encode($error['error']) : $error['error'];
+                        $this->error("  - {$error['stage']}: {$errorMessage}");
                     }
                 }
             };
@@ -330,7 +327,8 @@ class TestFacebookSyncDirect extends Command
             if (!empty($result['errors'])) {
                 $this->warn('⚠️  Chi tiết lỗi:');
                 foreach ($result['errors'] as $error) {
-                    $this->error("  - {$error['stage']}: {$error['error']}");
+                    $errorMessage = is_array($error['error']) ? json_encode($error['error']) : $error['error'];
+                    $this->error("  - {$error['stage']}: {$errorMessage}");
                 }
             }
             

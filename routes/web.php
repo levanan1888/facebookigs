@@ -98,6 +98,7 @@ Route::middleware(['auth', 'verified', 'permission.404:facebook.hierarchy.api'])
     Route::get('campaigns', [App\Http\Controllers\Api\HierarchyController::class, 'getCampaigns'])->name('campaigns');
     Route::get('adsets', [App\Http\Controllers\Api\HierarchyController::class, 'getAdSets'])->name('adsets');
     Route::get('ads', [App\Http\Controllers\Api\HierarchyController::class, 'getAds'])->name('ads');
+    Route::get('posts', [App\Http\Controllers\Api\HierarchyController::class, 'getPosts'])->name('posts');
 });
 
 // Note: The API for hierarchy is defined above using App\Http\Controllers\Api\HierarchyController.

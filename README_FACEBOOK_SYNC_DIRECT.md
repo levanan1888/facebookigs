@@ -252,3 +252,4 @@ Route::post('facebook/sync/ads-direct', [FacebookSyncController::class, 'syncAds
 Facebook Sync Direct service cung cấp một cách tiếp cận đơn giản và hiệu quả để đồng bộ dữ liệu Facebook Ads. Với API v23, performance tối ưu, và error handling mạnh mẽ, service này là lựa chọn lý tưởng cho development, testing, và các use case đơn giản.
 
 Tuy nhiên, cho production environments với khối lượng dữ liệu lớn, vẫn nên sử dụng queue job để đảm bảo reliability và scalability.
+

@@ -124,7 +124,14 @@
                         </div>
                         <div class="ml-4">
                             <p class="text-sm font-medium text-gray-600">Bài đăng</p>
-                            <p class="text-2xl font-bold text-gray-900">{{ number_format($data['totals']['posts']) }}</p>
+                            <p class="text-2xl font-bold text-gray-900">{{ number_format($data['totals']['posts'] ?? 0) }}</p>
+                            <p class="text-xs text-gray-500 mt-1">
+                                @if(($data['totals']['posts'] ?? 0) > 0)
+                                    {{ number_format($data['totals']['ads'] ?? 0) }} quảng cáo
+                                @else
+                                    Chưa có dữ liệu
+                                @endif
+                            </p>
                         </div>
                     </div>
                 </div>
@@ -202,7 +209,21 @@
                 </div>
                 <div class="bg-white rounded-lg shadow p-6">
                     <h3 class="text-lg font-semibold text-gray-900 mb-4">Phân bố trạng thái Campaigns</h3>
-                    <div class="h-72"><canvas id="statusChart"></canvas></div>
+                    <div class="h-72">
+                        @if(isset($data['statusStats']['campaigns']) && count($data['statusStats']['campaigns']) > 0)
+                            <canvas id="statusChart"></canvas>
+                        @else
+                            <div class="flex items-center justify-center h-full text-gray-500">
+                                <div class="text-center">
+                                    <svg class="w-16 h-16 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                                    </svg>
+                                    <p class="text-lg font-medium">Chưa có dữ liệu</p>
+                                    <p class="text-sm">Campaigns chưa được đồng bộ hoặc không có trạng thái</p>
+                                </div>
+                            </div>
+                        @endif
+                    </div>
                 </div>
             </div>
 
@@ -239,17 +260,54 @@
                             @forelse($data['stats']['top_posts'] ?? [] as $post)
                                 <div class="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                                     <div class="flex-1">
-                                        <h4 class="font-medium text-gray-900">{{ Str::limit($post->post_message, 50) ?: 'No message' }}</h4>
-                                        <p class="text-sm text-gray-600">Post ID: {{ $post->post_id }}</p>
+                                        <h4 class="font-medium text-gray-900">
+                                            @if($post->post_message)
+                                                {{ Str::limit($post->post_message, 50) }}
+                                            @elseif($post->creative_link_message)
+                                                {{ Str::limit($post->creative_link_message, 50) }}
+                                            @else
+                                                {{ Str::limit($post->name ?? 'Ad không có tên', 50) }}
+                                            @endif
+                                        </h4>
+                                        <p class="text-sm text-gray-600">
+                                            @if($post->post_id)
+                                                Post ID: {{ is_string($post->post_id) ? $post->post_id : json_encode($post->post_id) }}
+                                            @else
+                                                Link Ad
+                                            @endif
+                                        </p>
                                         <div class="flex space-x-4 mt-2 text-sm text-gray-500">
-                                            <span>👍 {{ number_format($post->post_likes ?? 0) }}</span>
-                                            <span>🔄 {{ number_format($post->post_shares ?? 0) }}</span>
-                                            <span>💬 {{ number_format($post->post_comments ?? 0) }}</span>
+                                            <span title="Likes">👍 {{ number_format($post->post_likes ?? 0) }}</span>
+                                            <span title="Shares">🔄 {{ number_format($post->post_shares ?? 0) }}</span>
+                                            <span title="Comments">💬 {{ number_format($post->post_comments ?? 0) }}</span>
+                                            @if($post->ad_clicks)
+                                                <span title="Clicks">🖱️ {{ number_format($post->ad_clicks ?? 0) }}</span>
+                                            @endif
                                         </div>
+                                        @if($post->post_permalink_url)
+                                            <div class="mt-2">
+                                                <a href="{{ $post->post_permalink_url }}" target="_blank" class="text-xs text-blue-600 hover:text-blue-800 underline">
+                                                    Xem bài viết gốc
+                                                </a>
+                                            </div>
+                                        @elseif(!empty($post->page_id) && !empty($post->post_id))
+                                            <div class="mt-2">
+                                                <a href="{{ 'https://www.facebook.com/' . trim($post->page_id, '"') . '/posts/' . trim($post->post_id, '"') }}" target="_blank" class="text-xs text-blue-600 hover:text-blue-800 underline">
+                                                    Xem bài viết gốc
+                                                </a>
+                                            </div>
+                                        @endif
                                     </div>
                                     <div class="text-right">
-                                        <p class="font-semibold text-gray-900">{{ number_format(($post->post_likes ?? 0) + ($post->post_shares ?? 0) + ($post->post_comments ?? 0)) }}</p>
-                                        <p class="text-xs text-gray-500">Tổng cộng</p>
+                                        @php
+                                            $totalEngagement = ($post->post_likes ?? 0) + ($post->post_shares ?? 0) + ($post->post_comments ?? 0);
+                                            $totalEngagement = $totalEngagement > 0 ? $totalEngagement : ($post->ad_clicks ?? 0);
+                                        @endphp
+                                        <p class="font-semibold text-gray-900">{{ number_format($totalEngagement) }}</p>
+                                        <p class="text-xs text-gray-500">Tổng tương tác</p>
+                                        @if($post->ad_spend)
+                                            <p class="text-xs text-green-600 mt-1">${{ number_format($post->ad_spend, 2) }}</p>
+                                        @endif
                                     </div>
                                 </div>
                             @empty
@@ -376,8 +434,34 @@
             if (statusEl) {
                 const statusCtx = statusEl.getContext('2d');
                 const statusData = @json($data['statusStats']['campaigns'] ?? []);
-                window.__fbCharts.status && window.__fbCharts.status.destroy();
-                window.__fbCharts.status = new Chart(statusCtx, { type: 'doughnut', data: { labels: Object.keys(statusData), datasets: [{ data: Object.values(statusData), backgroundColor: ['rgb(16,185,129)','rgb(245,158,11)','rgb(239,68,68)','rgb(107,114,128)'], borderWidth: 1, borderColor: '#fff' }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' }, tooltip: { callbacks: { label: (ctx) => `${ctx.label}: ${ctx.parsed.toLocaleString()}` } } } } });
+                
+                if (Object.keys(statusData).length > 0) {
+                    window.__fbCharts.status && window.__fbCharts.status.destroy();
+                    window.__fbCharts.status = new Chart(statusCtx, { 
+                        type: 'doughnut', 
+                        data: { 
+                            labels: Object.keys(statusData), 
+                            datasets: [{ 
+                                data: Object.values(statusData), 
+                                backgroundColor: ['rgb(16,185,129)','rgb(245,158,11)','rgb(239,68,68)','rgb(107,114,128)','rgb(99,102,241)'], 
+                                borderWidth: 1, 
+                                borderColor: '#fff' 
+                            }] 
+                        }, 
+                        options: { 
+                            responsive: true, 
+                            maintainAspectRatio: false, 
+                            plugins: { 
+                                legend: { position: 'bottom' }, 
+                                tooltip: { 
+                                    callbacks: { 
+                                        label: (ctx) => `${ctx.label}: ${ctx.parsed.toLocaleString()}` 
+                                    } 
+                                } 
+                            } 
+                        } 
+                    });
+                }
             }
         }
 

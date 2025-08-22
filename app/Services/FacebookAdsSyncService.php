@@ -343,11 +343,31 @@ class FacebookAdsSyncService
         $postInsights = null;
         
         if ($adType === 'post_ad') {
-            // Post Ads - lấy post details và insights
-            $postData = $this->extractPostData($ad);
-            if ($postData && isset($postData['id'])) {
-                $postInsights = $this->api->getPostInsightsExtended($postData['id']);
-                $this->reportProgress($onProgress, "📱 Post Ad: Lấy được post insights cho post: {$postData['id']}", $result);
+            // Post Ads - lấy post_id và tạo postData cơ bản
+            $postId = $this->extractPostId($ad);
+            if ($postId) {
+                // Tạo postData cơ bản từ post_id
+                $postData = [
+                    'id' => $postId,
+                    'type' => 'post',
+                    'status_type' => 'published_story'
+                ];
+                
+                // Thử lấy post details và insights
+                try {
+                    $fullPostData = $this->extractPostData($ad);
+                    if ($fullPostData && !isset($fullPostData['error'])) {
+                        $postData = array_merge($postData, $fullPostData);
+                    }
+                    
+                    $postInsights = $this->api->getPostInsightsExtended($postId);
+                    $this->reportProgress($onProgress, "📱 Post Ad: Lấy được post insights cho post: {$postId}", $result);
+                } catch (\Exception $e) {
+                    Log::warning("Không lấy được post details/insights, sử dụng data cơ bản", [
+                        'post_id' => $postId,
+                        'error' => $e->getMessage()
+                    ]);
+                }
             }
         } else {
             // Link Ads - chỉ lấy creative data
@@ -503,20 +523,20 @@ class FacebookAdsSyncService
                 // Debug: Log page_id để kiểm tra
                 Log::info("Extract page_id", [
                     'ad_id' => $ad['id'],
-                    'page_id' => $pageId,
+            'page_id' => $pageId,
                     'page_id_type' => gettype($pageId)
                 ]);
                 
                 $basicData = array_merge($basicData, [
                     'post_id' => $postData['id'],
                     'page_id' => $pageId, // page_id đã được xử lý trong extractPageId()
-                    'post_message' => $postData['message'] ?? null,
-                    'post_type' => $postData['type'] ?? null,
-                    'post_status_type' => $postData['status_type'] ?? null,
+            'post_message' => $postData['message'] ?? null,
+            'post_type' => $postData['type'] ?? null,
+            'post_status_type' => $postData['status_type'] ?? null,
                     'post_attachments' => isset($postData['attachments']) ? json_encode($postData['attachments']) : null,
-                    'post_permalink_url' => $postData['permalink_url'] ?? null,
-                    'post_created_time' => isset($postData['created_time']) ? Carbon::parse($postData['created_time']) : null,
-                    'post_updated_time' => isset($postData['updated_time']) ? Carbon::parse($postData['updated_time']) : null,
+            'post_permalink_url' => $postData['permalink_url'] ?? null,
+            'post_created_time' => isset($postData['created_time']) ? Carbon::parse($postData['created_time']) : null,
+            'post_updated_time' => isset($postData['updated_time']) ? Carbon::parse($postData['updated_time']) : null,
                 ]);
             }
             
@@ -547,25 +567,9 @@ class FacebookAdsSyncService
             ]);
             
             // Upsert vào database
-            // Đảm bảo tất cả dữ liệu đều là string, number hoặc null trước khi lưu
-            Log::info("Data trước khi validate", [
-                'ad_id' => $ad['id'] ?? 'unknown',
-                'data_keys' => array_keys($basicData),
-                'page_id_type' => isset($basicData['page_id']) ? gettype($basicData['page_id']) : 'not_set',
-                'page_id_value' => $basicData['page_id'] ?? 'not_set'
-            ]);
-            
-            $this->validateDataBeforeSave($basicData);
-            
-            Log::info("Data sau khi validate", [
-                'ad_id' => $ad['id'] ?? 'unknown',
-                'data_keys' => array_keys($basicData),
-                'page_id_type' => isset($basicData['page_id']) ? gettype($basicData['page_id']) : 'not_set',
-                'page_id_value' => $basicData['page_id'] ?? 'not_set'
-            ]);
-            
-            FacebookAd::updateOrCreate(
-                ['id' => $ad['id']],
+            // Không cần validate phức tạp vì đã sửa cấu trúc bảng để hỗ trợ JSON
+        FacebookAd::updateOrCreate(
+            ['id' => $ad['id']],
                 $basicData
             );
             
@@ -584,17 +588,7 @@ class FacebookAdsSyncService
     private function extractPageId(array $ad, ?array $postData): ?string
     {
         try {
-            // Từ object_story_spec
-            if (isset($ad['creative']['object_story_spec']['page_id'])) {
-                $pageId = $ad['creative']['object_story_spec']['page_id'];
-                // Đảm bảo luôn trả về string hoặc null
-                if (is_array($pageId)) {
-                    return json_encode($pageId);
-                }
-                return is_string($pageId) ? $pageId : (string) $pageId;
-            }
-            
-            // Từ object_story_id (format: pageId_postId)
+            // Ưu tiên từ object_story_id (format: pageId_postId)
             if (isset($ad['creative']['object_story_id'])) {
                 $storyId = $ad['creative']['object_story_id'];
                 if (is_string($storyId)) {
@@ -603,10 +597,27 @@ class FacebookAdsSyncService
                 }
             }
             
+            // Từ effective_object_story_id (format: pageId_postId)
+            if (isset($ad['creative']['effective_object_story_id'])) {
+                $storyId = $ad['creative']['effective_object_story_id'];
+                if (is_string($storyId)) {
+                    $parts = explode('_', $storyId);
+                    return $parts[0] ?? null;
+                }
+            }
+            
+            // Từ object_story_spec
+            if (isset($ad['creative']['object_story_spec']['page_id'])) {
+                $pageId = $ad['creative']['object_story_spec']['page_id'];
+                if (is_array($pageId)) {
+                    return json_encode($pageId);
+                }
+                return is_string($pageId) ? $pageId : (string) $pageId;
+            }
+            
             // Từ ad object trực tiếp
             if (isset($ad['page_id'])) {
                 $pageId = $ad['page_id'];
-                // Đảm bảo luôn trả về string hoặc null
                 if (is_array($pageId)) {
                     return json_encode($pageId);
                 }
@@ -615,8 +626,56 @@ class FacebookAdsSyncService
             
             return null;
             
-        } catch (\Exception $e) {
+            } catch (\Exception $e) {
             Log::error("Lỗi khi extract page_id", [
+                'ad_id' => $ad['id'] ?? 'unknown',
+                'error' => $e->getMessage()
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Trích xuất post_id từ Ad Creative
+     */
+    private function extractPostId(array $ad): ?string
+    {
+        try {
+            // Ưu tiên từ object_story_id (format: pageId_postId)
+            if (isset($ad['creative']['object_story_id'])) {
+                $storyId = $ad['creative']['object_story_id'];
+                if (is_string($storyId)) {
+                    $parts = explode('_', $storyId);
+                    return $parts[1] ?? null; // Phần sau dấu _ là post_id
+                }
+            }
+            
+            // Từ effective_object_story_id (format: pageId_postId)
+            if (isset($ad['creative']['effective_object_story_id'])) {
+                $storyId = $ad['creative']['effective_object_story_id'];
+                if (is_string($storyId)) {
+                    $parts = explode('_', $storyId);
+                    return $parts[1] ?? null; // Phần sau dấu _ là post_id
+                }
+            }
+            
+            // Từ object_story_spec
+            if (isset($ad['creative']['object_story_spec']['link_data']['post_id'])) {
+                return $ad['creative']['object_story_spec']['link_data']['post_id'];
+            }
+            
+            if (isset($ad['creative']['object_story_spec']['video_data']['post_id'])) {
+                return $ad['creative']['object_story_spec']['video_data']['post_id'];
+            }
+            
+            if (isset($ad['creative']['object_story_spec']['photo_data']['post_id'])) {
+                return $ad['creative']['object_story_spec']['photo_data']['post_id'];
+            }
+            
+            return null;
+            
+        } catch (\Exception $e) {
+            Log::error("Lỗi khi extract post_id", [
                 'ad_id' => $ad['id'] ?? 'unknown',
                 'error' => $e->getMessage()
             ]);
@@ -799,6 +858,23 @@ class FacebookAdsSyncService
                 'ad_unique_inline_link_clicks' => $totalMetrics['unique_inline_link_clicks'],
                 'ad_website_clicks' => $totalMetrics['website_clicks'],
             ]);
+
+            // Fallback: Nếu post_* chưa có (do thiếu quyền post insights), suy ra từ ad actions
+            // Lưu ý: Các action_type phổ biến: comment, post_reaction, post_share, post_engagement
+            if (!isset($data['post_likes']) || (int)$data['post_likes'] === 0) {
+                $likes = 0;
+                if (isset($allActions['post_reaction'])) { $likes += (int) $allActions['post_reaction']; }
+                if (isset($allActions['like'])) { $likes += (int) $allActions['like']; }
+                if ($likes > 0) { $data['post_likes'] = $likes; }
+            }
+            if (!isset($data['post_comments']) || (int)$data['post_comments'] === 0) {
+                $comments = (int) ($allActions['comment'] ?? 0);
+                if ($comments > 0) { $data['post_comments'] = $comments; }
+            }
+            if (!isset($data['post_shares']) || (int)$data['post_shares'] === 0) {
+                $shares = (int) ($allActions['post_share'] ?? 0);
+                if ($shares > 0) { $data['post_shares'] = $shares; }
+            }
         }
         
         return $data;
@@ -849,30 +925,8 @@ class FacebookAdsSyncService
     {
         return $this->syncFacebookData($onProgress);
     }
-
-    /**
-     * Validate data before saving to database.
-     * Ensures all values are string, number, or null.
-     */
-    private function validateDataBeforeSave(array &$data): void
-    {
-        foreach ($data as $key => $value) {
-            if (is_array($value)) {
-                // Nếu là array, convert thành JSON string
-                $data[$key] = json_encode($value);
-            } elseif (is_bool($value)) {
-                // Convert boolean thành string
-                $data[$key] = $value ? '1' : '0';
-            } elseif (is_object($value)) {
-                // Convert object thành string
-                $data[$key] = (string) $value;
-            } elseif (!is_string($value) && !is_numeric($value) && $value !== null) {
-                // Convert các kiểu dữ liệu khác thành string
-                $data[$key] = (string) $value;
-            }
-        }
-    }
 }
+
 
 
 
