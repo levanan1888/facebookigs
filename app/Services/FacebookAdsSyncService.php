@@ -503,20 +503,20 @@ class FacebookAdsSyncService
                 // Debug: Log page_id để kiểm tra
                 Log::info("Extract page_id", [
                     'ad_id' => $ad['id'],
-            'page_id' => $pageId,
+                    'page_id' => $pageId,
                     'page_id_type' => gettype($pageId)
                 ]);
                 
                 $basicData = array_merge($basicData, [
                     'post_id' => $postData['id'],
-                    'page_id' => is_array($pageId) ? json_encode($pageId) : $pageId,
-            'post_message' => $postData['message'] ?? null,
-            'post_type' => $postData['type'] ?? null,
-            'post_status_type' => $postData['status_type'] ?? null,
+                    'page_id' => $pageId, // page_id đã được xử lý trong extractPageId()
+                    'post_message' => $postData['message'] ?? null,
+                    'post_type' => $postData['type'] ?? null,
+                    'post_status_type' => $postData['status_type'] ?? null,
                     'post_attachments' => isset($postData['attachments']) ? json_encode($postData['attachments']) : null,
-            'post_permalink_url' => $postData['permalink_url'] ?? null,
-            'post_created_time' => isset($postData['created_time']) ? Carbon::parse($postData['created_time']) : null,
-            'post_updated_time' => isset($postData['updated_time']) ? Carbon::parse($postData['updated_time']) : null,
+                    'post_permalink_url' => $postData['permalink_url'] ?? null,
+                    'post_created_time' => isset($postData['created_time']) ? Carbon::parse($postData['created_time']) : null,
+                    'post_updated_time' => isset($postData['updated_time']) ? Carbon::parse($postData['updated_time']) : null,
                 ]);
             }
             
@@ -547,8 +547,25 @@ class FacebookAdsSyncService
             ]);
             
             // Upsert vào database
-        FacebookAd::updateOrCreate(
-            ['id' => $ad['id']],
+            // Đảm bảo tất cả dữ liệu đều là string, number hoặc null trước khi lưu
+            Log::info("Data trước khi validate", [
+                'ad_id' => $ad['id'] ?? 'unknown',
+                'data_keys' => array_keys($basicData),
+                'page_id_type' => isset($basicData['page_id']) ? gettype($basicData['page_id']) : 'not_set',
+                'page_id_value' => $basicData['page_id'] ?? 'not_set'
+            ]);
+            
+            $this->validateDataBeforeSave($basicData);
+            
+            Log::info("Data sau khi validate", [
+                'ad_id' => $ad['id'] ?? 'unknown',
+                'data_keys' => array_keys($basicData),
+                'page_id_type' => isset($basicData['page_id']) ? gettype($basicData['page_id']) : 'not_set',
+                'page_id_value' => $basicData['page_id'] ?? 'not_set'
+            ]);
+            
+            FacebookAd::updateOrCreate(
+                ['id' => $ad['id']],
                 $basicData
             );
             
@@ -570,7 +587,11 @@ class FacebookAdsSyncService
             // Từ object_story_spec
             if (isset($ad['creative']['object_story_spec']['page_id'])) {
                 $pageId = $ad['creative']['object_story_spec']['page_id'];
-                return is_array($pageId) ? json_encode($pageId) : (string) $pageId;
+                // Đảm bảo luôn trả về string hoặc null
+                if (is_array($pageId)) {
+                    return json_encode($pageId);
+                }
+                return is_string($pageId) ? $pageId : (string) $pageId;
             }
             
             // Từ object_story_id (format: pageId_postId)
@@ -585,12 +606,16 @@ class FacebookAdsSyncService
             // Từ ad object trực tiếp
             if (isset($ad['page_id'])) {
                 $pageId = $ad['page_id'];
-                return is_array($pageId) ? json_encode($pageId) : (string) $pageId;
+                // Đảm bảo luôn trả về string hoặc null
+                if (is_array($pageId)) {
+                    return json_encode($pageId);
+                }
+                return is_string($pageId) ? $pageId : (string) $pageId;
             }
             
             return null;
             
-            } catch (\Exception $e) {
+        } catch (\Exception $e) {
             Log::error("Lỗi khi extract page_id", [
                 'ad_id' => $ad['id'] ?? 'unknown',
                 'error' => $e->getMessage()
@@ -823,6 +848,29 @@ class FacebookAdsSyncService
     public function syncYesterday(?callable $onProgress = null): array
     {
         return $this->syncFacebookData($onProgress);
+    }
+
+    /**
+     * Validate data before saving to database.
+     * Ensures all values are string, number, or null.
+     */
+    private function validateDataBeforeSave(array &$data): void
+    {
+        foreach ($data as $key => $value) {
+            if (is_array($value)) {
+                // Nếu là array, convert thành JSON string
+                $data[$key] = json_encode($value);
+            } elseif (is_bool($value)) {
+                // Convert boolean thành string
+                $data[$key] = $value ? '1' : '0';
+            } elseif (is_object($value)) {
+                // Convert object thành string
+                $data[$key] = (string) $value;
+            } elseif (!is_string($value) && !is_numeric($value) && $value !== null) {
+                // Convert các kiểu dữ liệu khác thành string
+                $data[$key] = (string) $value;
+            }
+        }
     }
 }
 

@@ -130,7 +130,7 @@ class FacebookAdsService
         $url = "https://graph.facebook.com/{$this->apiVersion}/{$adSetId}/ads";
         $params = [
             'access_token' => $this->accessToken,
-            'fields' => 'id,name,status,effective_status,creative,created_time,updated_time,object_story_id,effective_object_story_id'
+            'fields' => 'id,name,status,effective_status,creative{id,title,body,object_story_spec,link_data,object_story_id,effective_object_story_id},created_time,updated_time,object_story_id,effective_object_story_id'
         ];
 
         $response = Http::get($url, $params);
