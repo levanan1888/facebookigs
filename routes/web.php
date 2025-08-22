@@ -47,6 +47,15 @@ Route::middleware(['auth', 'verified', 'permission.404:facebook.sync'])->group(f
     Route::match(['get', 'post'], 'facebook/sync/ads', [App\Http\Controllers\FacebookSyncController::class, 'syncAds'])
         ->name('facebook.sync.ads');
     
+    // Route mới cho sync trực tiếp
+    Route::post('facebook/sync/ads-direct', [App\Http\Controllers\FacebookSyncController::class, 'syncAdsDirect'])
+        ->name('facebook.sync.ads-direct');
+    
+    // Route để test sync
+    Route::get('facebook/sync/test', function() {
+        return view('facebook.sync-test');
+    })->name('facebook.sync.test');
+    
     Route::get('facebook/sync/status', [App\Http\Controllers\FacebookSyncController::class, 'getSyncStatus'])
         ->name('facebook.sync.status');
     

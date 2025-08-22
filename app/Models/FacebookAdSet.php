@@ -10,7 +10,19 @@ class FacebookAdSet extends Model
 {
     public $incrementing = false;
     protected $keyType = 'string';
-    protected $fillable = ['id','name','status','optimization_goal','campaign_id'];
+    protected $fillable = [
+        'id',
+        'name',
+        'status',
+        'optimization_goal',
+        'campaign_id',
+        'created_time',
+        'updated_time'
+    ];
+    protected $casts = [
+        'created_time' => 'datetime',
+        'updated_time' => 'datetime',
+    ];
 
     /**
      * Quan hệ: Ad Set thuộc về Campaign

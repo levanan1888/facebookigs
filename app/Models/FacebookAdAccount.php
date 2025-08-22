@@ -10,7 +10,19 @@ class FacebookAdAccount extends Model
 {
     public $incrementing = false;
     protected $keyType = 'string';
-    protected $fillable = ['id','account_id','name','account_status','business_id'];
+    protected $fillable = [
+        'id',
+        'account_id',
+        'name',
+        'account_status',
+        'business_id',
+        'created_time',
+        'updated_time'
+    ];
+    protected $casts = [
+        'created_time' => 'datetime',
+        'updated_time' => 'datetime',
+    ];
 
     /**
      * Quan hệ: Ad Account thuộc về Business

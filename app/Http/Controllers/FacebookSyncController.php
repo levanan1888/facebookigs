@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Services\FacebookAdsService;
+use App\Services\FacebookAdsSyncService;
 use App\Jobs\SyncFacebookAds;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -16,6 +17,87 @@ class FacebookSyncController extends Controller
 {
     public function __construct()
     {
+    }
+
+    /**
+     * Đồng bộ Facebook Ads trực tiếp (không cần job)
+     */
+    public function syncAdsDirect(Request $request): JsonResponse
+    {
+        try {
+            Log::info('Bắt đầu đồng bộ Facebook Ads trực tiếp');
+            
+            // Kiểm tra xem có đang chạy sync nào không
+            $currentStatus = Cache::get('facebook_sync_status');
+            if ($currentStatus && $currentStatus['status'] === 'running') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Đang có quá trình đồng bộ chạy. Vui lòng chờ hoàn thành.',
+                    'status' => $currentStatus
+                ]);
+            }
+            
+            // Reset cache khi bắt đầu đồng bộ mới
+            Cache::forget('facebook_sync_stop_requested');
+            Cache::forget('facebook_sync_progress');
+            
+            // Cập nhật trạng thái bắt đầu
+            Cache::put('facebook_sync_status', [
+                'status' => 'running',
+                'started_at' => now()->toISOString(),
+                'progress' => 0,
+                'message' => 'Đang đồng bộ dữ liệu...'
+            ], 3600);
+            
+            // Tạo progress callback
+            $progressCallback = function(array $progress) {
+                Cache::put('facebook_sync_progress', $progress, 3600);
+                Cache::put('facebook_sync_status', [
+                    'status' => 'running',
+                    'started_at' => Cache::get('facebook_sync_status')['started_at'],
+                    'progress' => $progress['counts']['ads'] ?? 0,
+                    'message' => $progress['message'] ?? 'Đang đồng bộ...'
+                ], 3600);
+            };
+            
+            // Chạy sync trực tiếp
+            $syncService = new FacebookAdsSyncService(new FacebookAdsService());
+            $result = $syncService->syncFacebookData($progressCallback);
+            
+            // Cập nhật trạng thái hoàn thành
+            Cache::put('facebook_sync_status', [
+                'status' => 'completed',
+                'started_at' => Cache::get('facebook_sync_status')['started_at'],
+                'completed_at' => now()->toISOString(),
+                'progress' => $result['ads'],
+                'message' => 'Hoàn thành đồng bộ dữ liệu',
+                'result' => $result
+            ], 3600);
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Đồng bộ Facebook Ads hoàn thành',
+                'result' => $result,
+                'status' => 'completed'
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('Lỗi khi đồng bộ Facebook Ads: ' . $e->getMessage());
+            
+            // Cập nhật trạng thái lỗi
+            Cache::put('facebook_sync_status', [
+                'status' => 'error',
+                'started_at' => Cache::get('facebook_sync_status')['started_at'] ?? null,
+                'error_at' => now()->toISOString(),
+                'error' => $e->getMessage(),
+                'message' => 'Lỗi khi đồng bộ dữ liệu'
+            ], 3600);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Lỗi: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
     /**

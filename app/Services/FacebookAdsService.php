@@ -1,285 +1,255 @@
 <?php
+
 declare(strict_types=1);
 
 namespace App\Services;
 
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class FacebookAdsService
 {
-    private string $baseUrl;
-    private string $token;
-    private int $paceMs = 200; // chờ giữa các request để tránh rate limit
+    private string $accessToken;
+    private string $apiVersion;
 
     public function __construct()
     {
-        $this->token = config('services.facebook.ads_token');
-        $this->baseUrl = 'https://graph.facebook.com/v19.0/';
-        // Pace mặc định 25ms giúp hạn chế bị rate-limit khi chạy dài
-        $this->paceMs = 25;
-    }
-
-    /**
-     * Gọi API theo URL đầy đủ (dùng cho paging.next)
-     */
-    private function getByUrl(string $url): array
-    {
-        $maxAttempts = 5;
-        $attempt = 0;
-        $sleepSeconds = 2;
-
-        while (true) {
-            $response = Http::timeout(30)->get($url);
-            if ($response->ok()) {
-                if ($this->paceMs > 0) {
-                    usleep($this->paceMs * 1000);
-                }
-                return $response->json() ?? [];
-            }
-
-            $body = $response->json();
-            $code = is_array($body) ? ($body['error']['code'] ?? null) : null;
-            $isRateLimit = in_array($response->status(), [429], true) || (int) $code === 17;
-
-            if ($isRateLimit && $attempt < ($maxAttempts - 1)) {
-                $retryAfter = (int) ($response->header('Retry-After') ?? 0);
-                $wait = max($retryAfter, $sleepSeconds * (2 ** $attempt));
-                sleep($wait);
-                $attempt++;
-                continue;
-            }
-
-            return [
-                'error' => [
-                    'status' => $response->status(),
-                    'body' => $body ?? $response->body(),
-                    'url' => $url,
-                    'attempt' => $attempt + 1,
-                ],
-            ];
+        $this->accessToken = config('services.facebook.ads_token') ?? '';
+        $this->apiVersion = config('services.facebook.api_version', 'v23.0');
+        
+        if (empty($this->accessToken)) {
+            throw new \Exception('Facebook ads token không được cấu hình. Vui lòng kiểm tra FACEBOOK_ADS_TOKEN trong .env');
         }
     }
 
     /**
-     * Lặp qua tất cả các trang (paging) để lấy đủ dữ liệu.
-     * Trả về mảng theo định dạng ['data' => [...]] để tương thích call-site hiện tại.
+     * Lấy danh sách Business Managers
      */
-    private function getAll(string $endpoint, array $params = [], int $limit = 100): array
-    {
-        $allData = [];
-        $params['limit'] = min($limit, 100);
-
-        do {
-            $response = $this->get($endpoint, $params);
-
-            if (isset($response['error'])) {
-                return $response;
-            }
-
-            $allData = array_merge($allData, $response['data'] ?? []);
-
-            // Check for next page
-            if (isset($response['paging']['next'])) {
-                $endpoint = $response['paging']['next'];
-                $params = []; // Reset params for next page
-            } else {
-                break;
-            }
-
-            usleep($this->paceMs * 1000);
-        } while (count($allData) < $limit);
-
-        return ['data' => array_slice($allData, 0, $limit)];
-    }
-
-    public function isConfigured(): bool
-    {
-        return filled($this->token);
-    }
-
-    private function get(string $path, array $query = []): array
-    {
-        $query['access_token'] = $this->token;
-
-        $maxAttempts = 5;
-        $attempt = 0;
-        $sleepSeconds = 2;
-        $url = $this->baseUrl . '/' . ltrim($path, '/');
-
-        while (true) {
-            $response = Http::timeout(30)->get($url, $query);
-            if ($response->ok()) {
-                // pace giữa các request
-                if ($this->paceMs > 0) {
-                    usleep($this->paceMs * 1000);
-                }
-                return $response->json() ?? [];
-            }
-
-            $body = $response->json();
-            $code = is_array($body) ? ($body['error']['code'] ?? null) : null;
-            $isRateLimit = in_array($response->status(), [429], true) || (int) $code === 17;
-
-            if ($isRateLimit && $attempt < ($maxAttempts - 1)) {
-                $retryAfter = (int) ($response->header('Retry-After') ?? 0);
-                $wait = max($retryAfter, $sleepSeconds * (2 ** $attempt));
-                sleep($wait);
-                $attempt++;
-                continue;
-            }
-
-            return [
-                'error' => [
-                    'status' => $response->status(),
-                    'body' => $body ?? $response->body(),
-                    'path' => $path,
-                    'attempt' => $attempt + 1,
-                ],
-            ];
-        }
-    }
-
     public function getBusinessManagers(): array
     {
-        return $this->getAll('me/businesses', [
-            'fields' => 'id,name,verification_status,created_time',
-        ]);
-    }
+        $url = "https://graph.facebook.com/{$this->apiVersion}/me/businesses";
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => 'id,name,verification_status,created_time'
+        ];
 
-    public function getClientAdAccounts(string $bmId): array
-    {
-        return $this->getAll($bmId . '/client_ad_accounts', [
-            'fields' => 'id,account_id,name,account_status',
-        ]);
+        $response = Http::get($url, $params);
+        
+        if ($response->successful()) {
+            return $response->json();
+        }
+
+        return ['error' => $response->json()];
     }
 
     /**
-     * Lấy các ad accounts thuộc sở hữu của Business Manager (owned)
+     * Lấy danh sách Ad Accounts được client quản lý
      */
-    public function getOwnedAdAccounts(string $bmId): array
+    public function getClientAdAccounts(string $businessId): array
     {
-        return $this->getAll($bmId . '/owned_ad_accounts', [
-            'fields' => 'id,account_id,name,account_status',
-        ]);
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$businessId}/client_ad_accounts";
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => 'id,account_id,name,account_status,created_time,updated_time'
+        ];
+
+        $response = Http::get($url, $params);
+        
+        if ($response->successful()) {
+            return $response->json();
+        }
+
+        return ['error' => $response->json()];
     }
 
-    public function getCampaigns(string $adAccountId): array
+    /**
+     * Lấy danh sách Ad Accounts sở hữu
+     */
+    public function getOwnedAdAccounts(string $businessId): array
     {
-        $id = str_starts_with($adAccountId, 'act_') ? $adAccountId : ('act_' . $adAccountId);
-        return $this->getAll($id . '/campaigns', [
-            'fields' => 'id,name,status,objective,start_time,stop_time,effective_status,configured_status,updated_time',
-        ]);
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$businessId}/owned_ad_accounts";
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => 'id,account_id,name,account_status,created_time,updated_time'
+        ];
+
+        $response = Http::get($url, $params);
+        
+        if ($response->successful()) {
+            return $response->json();
+        }
+
+        return ['error' => $response->json()];
     }
 
+    /**
+     * Lấy danh sách Campaigns
+     */
+    public function getCampaigns(string $accountId): array
+    {
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$accountId}/campaigns";
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => 'id,name,status,objective,start_time,stop_time,effective_status,configured_status,created_time,updated_time'
+        ];
+
+        $response = Http::get($url, $params);
+        
+        if ($response->successful()) {
+            return $response->json();
+        }
+
+        return ['error' => $response->json()];
+    }
+
+    /**
+     * Lấy danh sách Ad Sets theo Campaign
+     */
     public function getAdSetsByCampaign(string $campaignId): array
     {
-        return $this->getAll($campaignId . '/adsets', [
-            'fields' => 'id,name,status,optimization_goal,campaign_id',
-        ]);
-    }
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$campaignId}/adsets";
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => 'id,name,status,optimization_goal,created_time,updated_time'
+        ];
 
-    public function getAdsByAdSet(string $adSetId): array
-    {
-        return $this->getAll($adSetId . '/ads', [
-            'fields' => 'id,name,status,effective_status,adset_id,campaign_id,account_id,object_story_id,effective_object_story_id,page_id,created_time,updated_time,creative{id,title,body,object_story_spec{page_id,link_data{link,message,name,image_hash,call_to_action{type},page_welcome_message}},object_story_id,effective_object_story_id,call_to_action{type},image_hash,page_id}',
-        ]);
+        $response = Http::get($url, $params);
+        
+        if ($response->successful()) {
+            return $response->json();
+        }
+
+        return ['error' => $response->json()];
     }
 
     /**
-     * Lấy thông tin chi tiết của một post
+     * Lấy danh sách Ads theo Ad Set
+     */
+    public function getAdsByAdSet(string $adSetId): array
+    {
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$adSetId}/ads";
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => 'id,name,status,effective_status,creative,created_time,updated_time,object_story_id,effective_object_story_id'
+        ];
+
+        $response = Http::get($url, $params);
+        
+        if ($response->successful()) {
+            return $response->json();
+        }
+
+        return ['error' => $response->json()];
+    }
+
+    /**
+     * Lấy chi tiết Post
      */
     public function getPostDetails(string $postId): array
     {
-        return $this->getAll($postId, [
-            'fields' => 'id,message,type,status_type,attachments,permalink_url,created_time,updated_time,likes.summary(true),shares,comments.summary(true),reactions.summary(true),from,ad_info',
-        ]);
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$postId}";
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => 'id,message,type,status_type,attachments,permalink_url,created_time,updated_time'
+        ];
+
+        $response = Http::get($url, $params);
+        
+        if ($response->successful()) {
+            return $response->json();
+        }
+
+        return ['error' => $response->json()];
     }
 
     /**
-     * Lấy insights mở rộng của một post (từ 5 năm trước)
+     * Lấy Post Insights mở rộng
      */
     public function getPostInsightsExtended(string $postId): array
     {
-        // Lấy 1 bản ghi tổng hợp cho toàn thời gian để giảm số lượng request/paging
-        return $this->getAll($postId . '/insights', [
-            'date_preset' => 'maximum',
-            'time_increment' => 'all_days',
-            'fields' => 'impressions,reach,clicks,unique_clicks,likes,shares,comments,reactions,saves,hides,hide_all_clicks,unlikes,negative_feedback,video_views,video_view_time,video_avg_time_watched,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p95_watched_actions,video_p100_watched_actions,engagement_rate,ctr,cpm,cpc,actions,action_values,cost_per_action_type,cost_per_unique_action_type,breakdowns,spend,frequency',
-        ], 1);
-    }
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$postId}/insights";
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => 'impressions,reach,clicks,unique_clicks,likes,shares,comments,reactions,saves,hides,hide_all_clicks,unlikes,negative_feedback,video_views,video_view_time,video_avg_time_watched,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p95_watched_actions,video_p100_watched_actions,engagement_rate,ctr,cpm,cpc,spend,frequency,actions,action_values,cost_per_action_type,cost_per_unique_action_type,breakdowns',
+            'date_preset' => 'last_5y',
+            'period' => 'day'
+        ];
 
-    /**
-     * Lấy insights mở rộng của một ad (từ 5 năm trước)
-     */
-    public function getInsightsForAdExtended(string $adId): array
-    {
-        // Lấy 1 bản ghi tổng hợp để giảm thời gian
-        return $this->getAll($adId . '/insights', [
-            'date_preset' => 'maximum',
-            'time_increment' => 'all_days',
-            'fields' => 'spend,reach,impressions,clicks,ctr,cpc,cpm,actions,action_values,purchase_roas,frequency,unique_clicks',
-        ], 1);
-    }
-
-    /**
-     * Lấy insights cho nhiều ads đồng thời bằng Http::pool. Tự điều chỉnh concurrency khi gặp rate-limit.
-     */
-    public function getInsightsForAdsBatch(array $adIds, int $concurrency = 8): array
-    {
-        $results = [];
-        $adIds = array_values(array_unique(array_filter($adIds)));
-        $i = 0;
-        while ($i < count($adIds)) {
-            $chunk = array_slice($adIds, $i, max(1, $concurrency));
-
-            $responses = Http::pool(function ($pool) use ($chunk) {
-                foreach ($chunk as $adId) {
-                    $pool->as((string) $adId)
-                        ->timeout(30)
-                        ->get($this->baseUrl . '/' . ltrim((string) $adId, '/') . '/insights', [
-                            'access_token' => $this->token,
-                            'date_preset' => 'maximum',
-                            'time_increment' => 'all_days',
-                            'fields' => 'spend,reach,impressions,clicks,ctr,cpc,cpm,actions,action_values,purchase_roas,frequency,unique_clicks',
-                        ]);
-                }
-            });
-
-            $rateLimited = false;
-            foreach ($responses as $key => $resp) {
-                if ($resp->ok()) {
-                    $results[$key] = $resp->json() ?? [];
-                } else {
-                    $body = $resp->json();
-                    $code = is_array($body) ? ($body['error']['code'] ?? null) : null;
-                    if (in_array($resp->status(), [429], true) || in_array((int) $code, [17, 80004], true)) {
-                        $rateLimited = true;
-                    }
-                    $results[$key] = [
-                        'error' => [
-                            'status' => $resp->status(),
-                            'body' => $body ?? $resp->body(),
-                            'ad_id' => $key,
-                        ],
-                    ];
-                }
-            }
-
-            // Adaptive throttle nếu gặp rate-limit
-            if ($rateLimited) {
-                $concurrency = max(2, (int) floor($concurrency / 2));
-                sleep(10); // backoff
-            } else {
-                $i += count($chunk);
-                if ($this->paceMs > 0) {
-                    usleep($this->paceMs * 1000);
-                }
-            }
+        $response = Http::get($url, $params);
+        
+        if ($response->successful()) {
+            return $response->json();
         }
 
+        return ['error' => $response->json()];
+    }
+
+    /**
+     * Lấy Insights cho nhiều Ads cùng lúc
+     */
+    public function getInsightsForAdsBatch(array $adIds, int $concurrency = 5): array
+    {
+        $results = [];
+        $chunks = array_chunk($adIds, $concurrency);
+        
+        foreach ($chunks as $chunk) {
+            $promises = [];
+            
+            foreach ($chunk as $adId) {
+                $url = "https://graph.facebook.com/{$this->apiVersion}/{$adId}/insights";
+                $params = [
+                    'access_token' => $this->accessToken,
+                    'fields' => 'spend,reach,impressions,clicks,ctr,cpc,cpm,frequency,unique_clicks,actions,action_values,purchase_roas',
+                    'time_range' => json_encode([
+                        'since' => date('Y-m-d', strtotime('-36 months')),
+                        'until' => date('Y-m-d')
+                    ])
+                ];
+                
+                $promises[$adId] = Http::async()->get($url, $params);
+            }
+            
+            // Wait for all requests to complete
+            foreach ($promises as $adId => $promise) {
+                $response = $promise->wait();
+                
+                if ($response->successful()) {
+                    $results[$adId] = $response->json();
+                } else {
+                    $results[$adId] = ['error' => $response->json()];
+                }
+            }
+            
+            // Rate limiting - pause between chunks
+            if (count($chunks) > 1) {
+                usleep(1000000); // 1 second
+            }
+        }
+        
         return $results;
     }
 
-    
-}
+    /**
+     * Lấy Insights cho một Ad đơn lẻ
+     */
+    public function getInsightsForAd(string $adId): array
+    {
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$adId}/insights";
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => 'spend,reach,impressions,clicks,ctr,cpc,cpm,frequency,unique_clicks,actions,action_values,purchase_roas',
+            'time_range' => json_encode([
+                'since' => date('Y-m-d', strtotime('-36 months')),
+                'until' => date('Y-m-d')
+            ])
+        ];
 
+        $response = Http::get($url, $params);
+        
+        if ($response->successful()) {
+            return $response->json();
+        }
+
+        return ['error' => $response->json()];
+    }
+}
