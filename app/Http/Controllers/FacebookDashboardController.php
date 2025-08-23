@@ -9,6 +9,11 @@ use App\Models\FacebookAdAccount;
 use App\Models\FacebookAdSet;
 use App\Models\FacebookBusiness;
 use App\Models\FacebookCampaign;
+use App\Models\FacebookPost;
+use App\Models\FacebookPage;
+use App\Models\FacebookPostInsight;
+use App\Models\FacebookAdInsight;
+use App\Models\FacebookReportSummary;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -52,28 +57,31 @@ class FacebookDashboardController extends Controller
         $selectedAccountId = $request->get('account_id');
         $selectedCampaignId = $request->get('campaign_id');
 
-        // Sử dụng FacebookAd làm trung tâm
+        // Sử dụng cấu trúc mới đã normalize
         $totals = [
             'businesses' => FacebookBusiness::count(),
             'accounts' => FacebookAdAccount::count(),
             'campaigns' => FacebookCampaign::count(),
             'adsets' => FacebookAdSet::count(),
             'ads' => FacebookAd::count(),
-            'pages' => FacebookAd::whereNotNull('page_id')->distinct('page_id')->count(),
-            'posts' => FacebookAd::whereNotNull('post_id')->distinct('post_id')->count(),
-            'insights' => FacebookAd::whereNotNull('last_insights_sync')->count(),
+            'pages' => FacebookPage::count(),
+            'posts' => FacebookPost::count(),
+            'post_insights' => FacebookPostInsight::count(),
+            'ad_insights' => FacebookAdInsight::count(),
         ];
 
-        $adIdsQuery = FacebookAd::query();
+        // Lấy dữ liệu từ summary table cho hiệu suất tốt hơn
+        $summaryQuery = FacebookReportSummary::query();
         if ($selectedAccountId) {
-            $adIdsQuery->where('account_id', $selectedAccountId);
+            $summaryQuery->where('account_id', $selectedAccountId);
         }
         if ($selectedCampaignId) {
-            $adIdsQuery->where('campaign_id', $selectedCampaignId);
+            $summaryQuery->where('campaign_id', $selectedCampaignId);
         }
-        $filteredAdIds = $adIdsQuery->pluck('id');
+        
+        $summaryData = $summaryQuery->whereBetween('date', [$from, $to])->get();
 
-        $last7Days = collect(range(6, 0))->map(function ($daysAgo) use ($from, $to, $filteredAdIds) {
+        $last7Days = collect(range(6, 0))->map(function ($daysAgo) use ($from, $to, $summaryData) {
             $date = now()->subDays($daysAgo)->toDateString();
             if ($date < $from || $date > $to) {
                 return [
@@ -85,248 +93,172 @@ class FacebookDashboardController extends Controller
                 ];
             }
             
-            $adQuery = FacebookAd::query()->whereDate('last_insights_sync', $date);
-            if ($filteredAdIds->isNotEmpty()) {
-                $adQuery->whereIn('id', $filteredAdIds);
-            }
+            $dayData = $summaryData->where('date', $date)->first();
             
             return [
                 'date' => $date,
-                'ads' => $adQuery->count(),
-                'posts' => $adQuery->whereNotNull('post_id')->count(),
-                'campaigns' => $adQuery->distinct('campaign_id')->count(),
-                'spend' => $adQuery->sum('ad_spend'),
+                'ads' => $dayData ? $dayData->ads_count : 0,
+                'posts' => $dayData ? $dayData->posts_count : 0,
+                'campaigns' => $dayData ? $dayData->campaigns_count : 0,
+                'spend' => $dayData ? $dayData->total_spend : 0,
             ];
         });
 
-        // Thống kê tổng hợp
-        $totalStats = FacebookAd::query()
-            ->when($filteredAdIds->isNotEmpty(), function ($query) use ($filteredAdIds) {
-                $query->whereIn('id', $filteredAdIds);
-            })
-            ->selectRaw('
-                COUNT(*) as total_ads,
-                COUNT(DISTINCT post_id) as total_posts,
-                COUNT(DISTINCT campaign_id) as total_campaigns,
-                SUM(ad_spend) as total_spend,
-                SUM(ad_impressions) as total_impressions,
-                SUM(ad_clicks) as total_clicks,
-                SUM(ad_reach) as total_reach,
-                AVG(ad_ctr) as avg_ctr,
-                AVG(ad_cpc) as avg_cpc,
-                AVG(ad_cpm) as avg_cpm
-            ')
-            ->first();
+        // Tính toán stats tổng hợp
+        $stats = [
+            'total_spend' => $summaryData->sum('total_spend'),
+            'total_impressions' => $summaryData->sum('total_impressions'),
+            'total_clicks' => $summaryData->sum('total_clicks'),
+            'total_reach' => $summaryData->sum('total_reach'),
+            'avg_ctr' => $summaryData->avg('avg_ctr'),
+            'avg_cpc' => $summaryData->avg('avg_cpc'),
+            'avg_cpm' => $summaryData->avg('avg_cpm'),
+        ];
 
-        // Lấy recent ads và top posts
-        $recentAds = FacebookAd::with(['campaign:id,name'])
-            ->when($filteredAdIds->isNotEmpty(), function ($query) use ($filteredAdIds) {
-                $query->whereIn('id', $filteredAdIds);
+        // Top performing ads
+        $topAds = FacebookAd::with(['campaign', 'adSet', 'post'])
+            ->whereHas('insights', function ($query) use ($from, $to) {
+                $query->whereBetween('date', [$from, $to]);
             })
-            ->latest('last_insights_sync')
-            ->limit(5)
+            ->withSum(['insights as total_spend' => function ($query) use ($from, $to) {
+                $query->whereBetween('date', [$from, $to]);
+            }], 'spend')
+            ->orderByDesc('total_spend')
+            ->limit(10)
             ->get();
 
-        // Top posts: gộp theo page_id + post_id để tránh trùng lặp nhiều ad cho cùng 1 bài
-        $topPostsRaw = FacebookAd::whereNotNull('post_id')
-            ->when($filteredAdIds->isNotEmpty(), function ($query) use ($filteredAdIds) {
-                $query->whereIn('id', $filteredAdIds);
+        // Top performing posts
+        $topPosts = FacebookPost::with(['page', 'insights'])
+            ->whereHas('insights', function ($query) use ($from, $to) {
+                $query->whereBetween('date', [$from, $to]);
             })
-            ->get([
-                'id','name','status','effective_status','page_id','post_id','post_message','post_permalink_url',
-                'post_likes','post_shares','post_comments','ad_spend','ad_impressions','ad_clicks','last_insights_sync'
-            ]);
-
-        $topPosts = $topPostsRaw
-            ->filter(function ($p) { return !empty($p->page_id) && !empty($p->post_id); })
-            ->groupBy(function ($p) { return ($p->page_id ?? '') . '|' . ($p->post_id ?? ''); })
-            ->map(function ($group) {
-                $rep = $group->sortByDesc(function ($p) { return $p->last_insights_sync ?? $p->id; })->first();
-                $post = clone $rep;
-                $post->post_likes = (int) $group->sum(function ($p) { return (int) ($p->post_likes ?? 0); });
-                $post->post_shares = (int) $group->sum(function ($p) { return (int) ($p->post_shares ?? 0); });
-                $post->post_comments = (int) $group->sum(function ($p) { return (int) ($p->post_comments ?? 0); });
-                $post->ad_spend = (float) $group->sum(function ($p) { return (float) ($p->ad_spend ?? 0); });
-                $post->ad_impressions = (int) $group->sum(function ($p) { return (int) ($p->ad_impressions ?? 0); });
-                $post->ad_clicks = (int) $group->sum(function ($p) { return (int) ($p->ad_clicks ?? 0); });
-                return $post;
-            })
-            ->sortByDesc(function ($p) { return ($p->post_likes ?? 0) + ($p->post_shares ?? 0) + ($p->post_comments ?? 0); })
-            ->take(5)
-            ->values();
-
-        // Thống kê trạng thái campaigns
-        $statusStats = [
-            'campaigns' => FacebookCampaign::selectRaw('status, COUNT(*) as count')
-                ->groupBy('status')
-                ->pluck('count', 'status')
-                ->toArray(),
-            'ads' => FacebookAd::selectRaw('status, COUNT(*) as count')
-                ->groupBy('status')
-                ->pluck('count', 'status')
-                ->toArray(),
-        ];
+            ->withSum(['insights as total_engagement' => function ($query) use ($from, $to) {
+                $query->whereBetween('date', [$from, $to]);
+            }], DB::raw('likes + shares + comments'))
+            ->orderByDesc('total_engagement')
+            ->limit(10)
+            ->get();
 
         // Lấy accounts và campaigns cho filter
         $accounts = FacebookAdAccount::select('id', 'name', 'account_id')->get();
         $campaigns = FacebookCampaign::select('id', 'name')->get();
 
         return [
+            'totals' => $totals,
+            'stats' => $stats,
+            'last7Days' => $last7Days,
+            'topAds' => $topAds,
+            'topPosts' => $topPosts,
             'filters' => [
-                'from' => $from, 
+                'from' => $from,
                 'to' => $to,
+                'account_id' => $selectedAccountId,
+                'campaign_id' => $selectedCampaignId,
                 'accounts' => $accounts,
                 'campaigns' => $campaigns,
-                'accountId' => $selectedAccountId,
-                'campaignId' => $selectedCampaignId,
-            ],
-            'totals' => $totals,
-            'last7Days' => $last7Days,
-            'statusStats' => $statusStats,
-            'stats' => [
-                'total_ads' => $totalStats->total_ads ?? 0,
-                'total_posts' => $totalStats->total_posts ?? 0,
-                'total_campaigns' => $totalStats->total_campaigns ?? 0,
-                'total_spend' => $totalStats->total_spend ?? 0,
-                'total_impressions' => $totalStats->total_impressions ?? 0,
-                'total_clicks' => $totalStats->total_clicks ?? 0,
-                'total_reach' => $totalStats->total_reach ?? 0,
-                'avg_ctr' => $totalStats->avg_ctr ?? 0,
-                'avg_cpc' => $totalStats->avg_cpc ?? 0,
-                'avg_cpm' => $totalStats->avg_cpm ?? 0,
-                'recent_ads' => $recentAds,
-                'top_posts' => $topPosts,
-            ],
-            'performanceStats' => [
-                'totalSpend' => $totalStats->total_spend ?? 0,
-                'totalImpressions' => $totalStats->total_impressions ?? 0,
-                'totalClicks' => $totalStats->total_clicks ?? 0,
-                'totalReach' => $totalStats->total_reach ?? 0,
-            ],
+            ]
         ];
     }
 
     private function getHierarchyData(): array
     {
-        // Lấy campaigns với metrics
-        $campaigns = FacebookCampaign::with(['adAccount:id,name'])
-            ->withCount(['adSets', 'ads'])
-            ->get()
-            ->map(function ($campaign) {
-                // Tính metrics cho campaign từ ads
-                $campaignMetrics = FacebookAd::where('campaign_id', $campaign->id)
-                    ->selectRaw('
-                        SUM(ad_spend) as total_spend,
-                        SUM(ad_impressions) as total_impressions,
-                        SUM(ad_clicks) as total_clicks,
-                        AVG(ad_ctr) as avg_ctr
-                    ')
-                    ->first();
-                
-                $campaign->total_spend = $campaignMetrics->total_spend ?? 0;
-                $campaign->total_impressions = $campaignMetrics->total_impressions ?? 0;
-                $campaign->total_clicks = $campaignMetrics->total_clicks ?? 0;
-                $campaign->avg_ctr = $campaignMetrics->avg_ctr ?? 0;
-                
-                return $campaign;
-            });
+        // Sử dụng cấu trúc mới với relationships
+        $businesses = FacebookBusiness::withCount(['adAccounts'])
+            ->with(['adAccounts' => function ($query) {
+                $query->withCount(['campaigns']);
+            }])
+            ->get();
 
-        // Lấy adsets với metrics
-        $adSets = FacebookAdSet::with(['campaign:id,name'])
-            ->withCount('ads')
-            ->get()
-            ->map(function ($adSet) {
-                // Tính metrics cho adset từ ads
-                $adSetMetrics = FacebookAd::where('adset_id', $adSet->id)
-                    ->selectRaw('
-                        SUM(ad_spend) as total_spend,
-                        SUM(ad_impressions) as total_impressions,
-                        SUM(ad_clicks) as total_clicks,
-                        AVG(ad_ctr) as avg_ctr
-                    ')
-                    ->first();
-                
-                $adSet->total_spend = $adSetMetrics->total_spend ?? 0;
-                $adSet->total_impressions = $adSetMetrics->total_impressions ?? 0;
-                $adSet->total_clicks = $adSetMetrics->total_clicks ?? 0;
-                $adSet->avg_ctr = $adSetMetrics->avg_ctr ?? 0;
-                
-                return $adSet;
-            });
+        $campaigns = FacebookCampaign::withCount(['adSets', 'ads'])
+            ->with(['adSets' => function ($query) {
+                $query->withCount('ads');
+            }])
+            ->get();
+
+        $adSets = FacebookAdSet::withCount('ads')
+            ->with(['ads' => function ($query) {
+                $query->with(['post', 'insights']);
+            }])
+            ->get();
 
         return [
-            'businesses' => FacebookBusiness::withCount('adAccounts')->get(),
+            'businesses' => $businesses,
             'campaigns' => $campaigns,
-            'adSets' => $adSets,
-            'totalAccounts' => FacebookAdAccount::count(),
-            'totalCampaigns' => FacebookCampaign::count(),
-            'totalAdSets' => FacebookAdSet::count(),
-            'totalAds' => FacebookAd::count(),
-            'totalPosts' => FacebookAd::whereNotNull('post_id')->distinct('post_id')->count(),
+            'adsets' => $adSets,
         ];
     }
 
     private function getAnalyticsData(): array
     {
-        // Dữ liệu analytics từ bảng FacebookAd
-        $stats = FacebookAd::selectRaw('
-            SUM(ad_spend) as total_spend,
-            SUM(ad_impressions) as total_impressions,
-            SUM(ad_clicks) as total_clicks,
-            SUM(ad_reach) as total_reach,
-            AVG(ad_ctr) as avg_ctr,
-            AVG(ad_cpc) as avg_cpc,
-            AVG(ad_cpm) as avg_cpm
-        ')->first();
+        // Sử dụng summary table cho analytics
+        $summaryData = FacebookReportSummary::whereBetween('date', [
+            now()->subDays(30)->toDateString(),
+            now()->toDateString()
+        ])->get();
+
+        $dailyStats = $summaryData->groupBy('date')->map(function ($dayData) {
+            return [
+                'date' => $dayData->first()->date,
+                'total_spend' => $dayData->sum('total_spend'),
+                'total_impressions' => $dayData->sum('total_impressions'),
+                'total_clicks' => $dayData->sum('total_clicks'),
+                'total_reach' => $dayData->sum('total_reach'),
+                'avg_ctr' => $dayData->avg('avg_ctr'),
+                'avg_cpc' => $dayData->avg('avg_cpc'),
+                'avg_cpm' => $dayData->avg('avg_cpm'),
+            ];
+        })->values();
+
+        // Performance by campaign
+        $campaignPerformance = FacebookCampaign::with(['ads.insights'])
+            ->withSum(['ads.insights as total_spend' => function ($query) {
+                $query->whereBetween('date', [now()->subDays(30)->toDateString(), now()->toDateString()]);
+            }], 'spend')
+            ->withSum(['ads.insights as total_impressions' => function ($query) {
+                $query->whereBetween('date', [now()->subDays(30)->toDateString(), now()->toDateString()]);
+            }], 'impressions')
+            ->withSum(['ads.insights as total_clicks' => function ($query) {
+                $query->whereBetween('date', [now()->subDays(30)->toDateString(), now()->toDateString()]);
+            }], 'clicks')
+            ->orderByDesc('total_spend')
+            ->limit(20)
+            ->get();
+
+        // Performance by post type
+        $postTypePerformance = FacebookPost::with(['insights'])
+            ->withSum(['insights as total_engagement' => function ($query) {
+                $query->whereBetween('date', [now()->subDays(30)->toDateString(), now()->toDateString()]);
+            }], DB::raw('likes + shares + comments'))
+            ->groupBy('type')
+            ->select('type', DB::raw('count(*) as post_count'))
+            ->get();
 
         return [
-            'totalSpend' => $stats->total_spend ?? 0,
-            'totalImpressions' => $stats->total_impressions ?? 0,
-            'totalClicks' => $stats->total_clicks ?? 0,
-            'totalReach' => $stats->total_reach ?? 0,
-            'avgCTR' => $stats->avg_ctr ?? 0,
-            'avgCPC' => $stats->avg_cpc ?? 0,
-            'avgCPM' => $stats->avg_cpm ?? 0,
+            'dailyStats' => $dailyStats,
+            'campaignPerformance' => $campaignPerformance,
+            'postTypePerformance' => $postTypePerformance,
         ];
     }
 
     private function getRawData(): array
     {
-        // Tổng số từ bảng FacebookAd làm trung tâm
-        $totalsRaw = [
-            'businesses' => FacebookBusiness::count(),
-            'accounts' => FacebookAdAccount::count(),
-            'campaigns' => FacebookCampaign::count(),
-            'adsets' => FacebookAdSet::count(),
-            'ads' => FacebookAd::count(),
-            'pages' => FacebookAd::whereNotNull('page_id')->distinct('page_id')->count(),
-            'posts' => FacebookAd::whereNotNull('post_id')->distinct('post_id')->count(),
-            'insights' => FacebookAd::whereNotNull('last_insights_sync')->count(),
-        ];
+        // Sử dụng cấu trúc mới với pagination
+        $ads = FacebookAd::with(['campaign', 'adSet', 'post', 'insights'])
+            ->orderBy('created_time', 'desc')
+            ->paginate(50);
 
-        // Dữ liệu từ bảng FacebookAd với các thông tin liên quan
-        $rawData = [
-            'businesses' => FacebookBusiness::withCount('adAccounts')->latest('created_at')->limit(10)->get(),
-            'accounts' => FacebookAdAccount::withCount('campaigns')->latest('created_at')->limit(20)->get(),
-            'campaigns' => FacebookCampaign::with(['adAccount:id,name'])->latest('created_at')->limit(50)->get(),
-            'adsets' => FacebookAdSet::with(['campaign:id,name'])->latest('created_at')->limit(50)->get(),
-            'ads' => FacebookAd::with(['campaign:id,name', 'adSet:id,name'])
-                ->latest('last_insights_sync')
-                ->limit(100)
-                ->get(),
-            'posts' => FacebookAd::with(['campaign:id,name', 'adSet:id,name'])
-                ->where(function($query) {
-                    $query->whereNotNull('post_id')
-                          ->orWhereNotNull('creative_link_url');
-                })
-                ->latest('last_insights_sync')
-                ->limit(100)
-                ->get(),
-        ];
+        $posts = FacebookPost::with(['page', 'insights'])
+            ->orderBy('created_time', 'desc')
+            ->paginate(50);
+
+        $insights = FacebookAdInsight::with(['ad'])
+            ->orderBy('date', 'desc')
+            ->paginate(50);
 
         return [
-            'totals' => $totalsRaw,
-            'data' => $rawData,
+            'ads' => $ads,
+            'posts' => $posts,
+            'insights' => $insights,
         ];
     }
 }

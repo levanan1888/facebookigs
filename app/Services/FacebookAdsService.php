@@ -15,11 +15,83 @@ class FacebookAdsService
     public function __construct()
     {
         $this->accessToken = config('services.facebook.ads_token') ?? '';
-        $this->apiVersion = config('services.facebook.api_version', 'v23.0');
+        // Sử dụng API version mới nhất
+        $this->apiVersion = 'v23.0'; // Force sử dụng v23.0
         
         if (empty($this->accessToken)) {
             throw new \Exception('Facebook ads token không được cấu hình. Vui lòng kiểm tra FACEBOOK_ADS_TOKEN trong .env');
         }
+    }
+
+    /**
+     * Helper method để xử lý HTTP requests với timeout và retry
+     */
+    private function makeRequest(string $url, array $params, int $maxRetries = 3): array
+    {
+        $attempt = 0;
+        $delays = [5, 15, 30]; // Tăng delays để tránh rate limit
+
+        while ($attempt < $maxRetries) {
+            try {
+                $response = Http::timeout(60) // Tăng timeout lên 60 giây
+                    ->retry(1, 1000) // Retry 1 lần với delay 1 giây
+                    ->get($url, $params);
+
+                if ($response->successful()) {
+                    return $response->json();
+                }
+
+                $responseData = $response->json();
+                
+                // Kiểm tra rate limit error
+                if (isset($responseData['error']['code']) && $responseData['error']['code'] == 17) {
+                    Log::warning("Facebook API rate limit reached", [
+                        'url' => $url,
+                        'attempt' => $attempt + 1,
+                        'error' => $responseData['error']
+                    ]);
+                    
+                    // Delay lâu hơn cho rate limit
+                    $delay = $delays[min($attempt, count($delays) - 1)] * 2;
+                    Log::info("Waiting {$delay} seconds before retry due to rate limit");
+                    sleep($delay);
+                    $attempt++;
+                    
+                    if ($attempt >= $maxRetries) {
+                        return ['error' => $responseData['error']];
+                    }
+                    continue;
+                }
+
+                // Log lỗi khác
+                Log::warning("Facebook API request failed", [
+                    'url' => $url,
+                    'status' => $response->status(),
+                    'attempt' => $attempt + 1,
+                    'response' => $responseData
+                ]);
+
+                return ['error' => $responseData];
+
+            } catch (\Exception $e) {
+                $attempt++;
+                
+                Log::error("Facebook API request exception", [
+                    'url' => $url,
+                    'attempt' => $attempt,
+                    'error' => $e->getMessage()
+                ]);
+
+                if ($attempt >= $maxRetries) {
+                    return ['error' => ['message' => 'Request timeout after ' . $maxRetries . ' attempts: ' . $e->getMessage()]];
+                }
+
+                // Delay trước khi retry
+                sleep($delays[min($attempt - 1, count($delays) - 1)]);
+            }
+        }
+
+        return ['error' => ['message' => 'Request failed after ' . $maxRetries . ' attempts']];
     }
 
     /**
@@ -33,13 +105,7 @@ class FacebookAdsService
             'fields' => 'id,name,verification_status,created_time'
         ];
 
-        $response = Http::get($url, $params);
-        
-        if ($response->successful()) {
-            return $response->json();
-        }
-
-        return ['error' => $response->json()];
+        return $this->makeRequest($url, $params);
     }
 
     /**
@@ -53,13 +119,7 @@ class FacebookAdsService
             'fields' => 'id,account_id,name,account_status,created_time,updated_time'
         ];
 
-        $response = Http::get($url, $params);
-        
-        if ($response->successful()) {
-            return $response->json();
-        }
-
-        return ['error' => $response->json()];
+        return $this->makeRequest($url, $params);
     }
 
     /**
@@ -73,13 +133,7 @@ class FacebookAdsService
             'fields' => 'id,account_id,name,account_status,created_time,updated_time'
         ];
 
-        $response = Http::get($url, $params);
-        
-        if ($response->successful()) {
-            return $response->json();
-        }
-
-        return ['error' => $response->json()];
+        return $this->makeRequest($url, $params);
     }
 
     /**
@@ -93,13 +147,7 @@ class FacebookAdsService
             'fields' => 'id,name,status,objective,start_time,stop_time,effective_status,configured_status,created_time,updated_time'
         ];
 
-        $response = Http::get($url, $params);
-        
-        if ($response->successful()) {
-            return $response->json();
-        }
-
-        return ['error' => $response->json()];
+        return $this->makeRequest($url, $params);
     }
 
     /**
@@ -113,13 +161,7 @@ class FacebookAdsService
             'fields' => 'id,name,status,optimization_goal,created_time,updated_time'
         ];
 
-        $response = Http::get($url, $params);
-        
-        if ($response->successful()) {
-            return $response->json();
-        }
-
-        return ['error' => $response->json()];
+        return $this->makeRequest($url, $params);
     }
 
     /**
@@ -133,13 +175,7 @@ class FacebookAdsService
             'fields' => 'id,name,status,effective_status,creative{id,title,body,object_story_spec,object_story_id,effective_object_story_id},created_time,updated_time,object_story_id,effective_object_story_id'
         ];
 
-        $response = Http::get($url, $params);
-        
-        if ($response->successful()) {
-            return $response->json();
-        }
-
-        return ['error' => $response->json()];
+        return $this->makeRequest($url, $params);
     }
 
     /**
@@ -153,76 +189,90 @@ class FacebookAdsService
             'fields' => 'id,message,type,status_type,attachments,permalink_url,created_time,updated_time'
         ];
 
-        $response = Http::get($url, $params);
-        
-        if ($response->successful()) {
-            return $response->json();
-        }
-
-        // Log chi tiết lỗi để debug
-        $errorData = $response->json();
-        Log::error("Facebook API error khi lấy post details", [
-            'post_id' => $postId,
-            'url' => $url,
-            'status' => $response->status(),
-            'response' => $errorData
-        ]);
-
-        return ['error' => $errorData];
+        return $this->makeRequest($url, $params);
     }
 
     /**
-     * Lấy Post Insights mở rộng
+     * Lấy Post Insights mở rộng với dữ liệu video đầy đủ
+     * Theo tài liệu Facebook API v23.0, sử dụng endpoint trực tiếp trên post
      */
     public function getPostInsightsExtended(string $postId): array
     {
+        // Sử dụng endpoint trực tiếp trên post với format đầy đủ
         $url = "https://graph.facebook.com/{$this->apiVersion}/{$postId}/insights";
         $params = [
             'access_token' => $this->accessToken,
-            // Lưu ý: Likes/Comments/Shares không có trong insights; dùng edges riêng để đếm
-            'fields' => 'impressions,reach,clicks,unique_clicks,reactions,saves,hides,hide_all_clicks,unlikes,negative_feedback,video_views,video_view_time,video_avg_time_watched,engagement_rate,ctr,cpm,cpc,spend,frequency,actions,action_values,cost_per_action_type,cost_per_unique_action_type,breakdowns',
-            'date_preset' => 'last_5y',
-            'period' => 'day'
+            'fields' => 'post_impressions,post_impressions_unique,post_engaged_users,post_video_views,post_video_avg_time_watched,post_video_complete_views_30s,post_video_views_10s,post_video_views_paid,post_video_views_organic'
         ];
 
-        $response = Http::get($url, $params);
-        
-        if ($response->successful()) {
-            return $response->json();
-        }
+        return $this->makeRequest($url, $params);
+    }
 
-        return ['error' => $response->json()];
+    /**
+     * Lấy Post Insights với breakdown theo các tiêu chí (tuân thủ quy tắc Facebook API)
+     * Sử dụng endpoint insights thay vì statuses (deprecated)
+     */
+    public function getPostInsightsWithBreakdowns(string $postId, array $breakdowns = ['age', 'gender', 'region', 'platform_position']): array
+    {
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$postId}/insights";
+        
+        // Theo tài liệu Facebook, một số trường không thể dùng với breakdown
+        $fields = 'impressions,reach,clicks,unique_clicks,reactions,saves,hides,hide_all_clicks,unlikes,negative_feedback,engagement_rate,ctr,cpm,cpc,spend,frequency,actions,action_values,cost_per_action_type,cost_per_unique_action_type';
+        
+        // Thêm video fields nếu không có region breakdown (theo tài liệu Meta API)
+        if (!in_array('region', $breakdowns)) {
+            $fields .= ',post_video_views,post_video_views_unique,post_video_avg_time_watched,post_video_complete_views_30s,post_video_views_10s,post_video_views_paid,post_video_views_organic';
+        }
+        
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => $fields,
+            'breakdowns' => implode(',', $breakdowns),
+            'time_range' => json_encode([
+                'since' => date('Y-m-d', strtotime('-36 months')),
+                'until' => date('Y-m-d')
+            ])
+        ];
+
+        return $this->makeRequest($url, $params);
     }
 
     /**
      * Lấy số reactions, comments, shares của một post.
      * Cần Page Access Token hoặc quyền phù hợp (pages_read_engagement hoặc Page Public Content Access).
+     * Sử dụng endpoint mới thay vì statuses (deprecated)
      */
     public function getPostEngagementCounts(string $postId): array
     {
-        // Reactions count
+        // Reactions count - sử dụng endpoint reactions
         $reactionsUrl = "https://graph.facebook.com/{$this->apiVersion}/{$postId}/reactions";
-        $reactionsResp = Http::get($reactionsUrl, [
-            'access_token' => $this->accessToken,
-            'summary' => 'true',
-            'limit' => 0,
-        ]);
+        $reactionsResp = Http::timeout(60)
+            ->retry(1, 1000)
+            ->get($reactionsUrl, [
+                'access_token' => $this->accessToken,
+                'summary' => 'true',
+                'limit' => 0,
+            ]);
 
-        // Comments count
+        // Comments count - sử dụng endpoint comments
         $commentsUrl = "https://graph.facebook.com/{$this->apiVersion}/{$postId}/comments";
-        $commentsResp = Http::get($commentsUrl, [
-            'access_token' => $this->accessToken,
-            'summary' => 'true',
-            'filter' => 'toplevel',
-            'limit' => 0,
-        ]);
+        $commentsResp = Http::timeout(60)
+            ->retry(1, 1000)
+            ->get($commentsUrl, [
+                'access_token' => $this->accessToken,
+                'summary' => 'true',
+                'filter' => 'toplevel',
+                'limit' => 0,
+            ]);
 
-        // Shares count (lấy qua field shares.summary)
+        // Shares count - lấy qua field shares.summary
         $sharesUrl = "https://graph.facebook.com/{$this->apiVersion}/{$postId}";
-        $sharesResp = Http::get($sharesUrl, [
-            'access_token' => $this->accessToken,
-            'fields' => 'shares',
-        ]);
+        $sharesResp = Http::timeout(60)
+            ->retry(1, 1000)
+            ->get($sharesUrl, [
+                'access_token' => $this->accessToken,
+                'fields' => 'shares',
+            ]);
 
         $reactions = $reactionsResp->successful() ? ($reactionsResp->json()['summary']['total_count'] ?? 0) : 0;
         $comments = $commentsResp->successful() ? ($commentsResp->json()['summary']['total_count'] ?? 0) : 0;
@@ -246,6 +296,7 @@ class FacebookAdsService
 
     /**
      * Lấy Insights cho nhiều Ads cùng lúc
+     * Sử dụng endpoint insights thay vì statuses (deprecated)
      */
     public function getInsightsForAdsBatch(array $adIds, int $concurrency = 5): array
     {
@@ -259,7 +310,7 @@ class FacebookAdsService
                 $url = "https://graph.facebook.com/{$this->apiVersion}/{$adId}/insights";
                 $params = [
                     'access_token' => $this->accessToken,
-                    'fields' => 'spend,reach,impressions,clicks,ctr,cpc,cpm,frequency,unique_clicks,actions,action_values,purchase_roas',
+                    'fields' => 'spend,reach,impressions,clicks,ctr,cpc,cpm,frequency,unique_clicks,actions,action_values,purchase_roas,video_avg_time_watched_actions,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p100_watched_actions',
                     'time_range' => json_encode([
                         'since' => date('Y-m-d', strtotime('-36 months')),
                         'until' => date('Y-m-d')
@@ -290,26 +341,1019 @@ class FacebookAdsService
     }
 
     /**
-     * Lấy Insights cho một Ad đơn lẻ
+     * Lấy Insights cho một Ad đơn lẻ với dữ liệu đầy đủ theo Facebook Marketing API v23.0
+     * Sử dụng endpoint insights với tất cả fields hợp lệ
      */
     public function getInsightsForAd(string $adId): array
     {
         $url = "https://graph.facebook.com/{$this->apiVersion}/{$adId}/insights";
+        
+        // Sử dụng tất cả fields hợp lệ theo Facebook Marketing API v23.0
+        $fields = [
+            // Basic metrics
+            'spend', 'reach', 'impressions', 'clicks', 'ctr', 'cpc', 'cpm', 'frequency',
+            'unique_clicks', 'unique_ctr', 'ad_name', 'ad_id',
+            
+            // Actions và action values (chứa video metrics)
+            'actions', 'action_values',
+            
+            // Cost metrics
+            'cost_per_action_type', 'cost_per_unique_action_type',
+            
+            // Conversion metrics
+            'conversions', 'conversion_values', 'cost_per_conversion', 'purchase_roas',
+            
+            // Click metrics
+            'outbound_clicks', 'unique_outbound_clicks', 'inline_link_clicks', 'unique_inline_link_clicks',
+            
+            // Video metrics (available in actions)
+            'video_30_sec_watched_actions', 'video_avg_time_watched_actions',
+            'video_p25_watched_actions', 'video_p50_watched_actions', 
+            'video_p75_watched_actions', 'video_p95_watched_actions', 'video_p100_watched_actions',
+            
+            // Date fields
+            'date_start', 'date_stop'
+        ];
+        
         $params = [
             'access_token' => $this->accessToken,
-            'fields' => 'spend,reach,impressions,clicks,ctr,cpc,cpm,frequency,unique_clicks,actions,action_values,purchase_roas,ad_name,ad_id',
+            'fields' => implode(',', $fields),
             'time_range' => json_encode([
                 'since' => date('Y-m-d', strtotime('-36 months')),
                 'until' => date('Y-m-d')
             ])
         ];
 
-        $response = Http::get($url, $params);
+        $result = $this->makeRequest($url, $params);
         
-        if ($response->successful()) {
-            return $response->json();
-        }
+        Log::info("Ad Insights response", [
+            'ad_id' => $adId,
+            'fields' => implode(',', $fields),
+            'has_data' => isset($result['data']) && !empty($result['data'])
+        ]);
 
-        return ['error' => $response->json()];
+        return $result;
+    }
+
+    /**
+     * Lấy Insights cho Ad với breakdown theo các tiêu chí (tuân thủ quy tắc Facebook API)
+     * Sử dụng endpoint insights với các fields phù hợp cho từng breakdown
+     */
+    public function getInsightsForAdWithBreakdowns(string $adId, array $breakdowns = ['age', 'gender']): array
+    {
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$adId}/insights";
+        
+        // Fields cơ bản hợp lệ với tất cả breakdowns
+        $baseFields = [
+            'spend', 'reach', 'impressions', 'clicks', 'ctr', 'cpc', 'cpm', 'frequency',
+            'unique_clicks', 'actions', 'action_values', 'ad_name', 'ad_id'
+        ];
+        
+        // Video metrics fields chỉ hợp lệ với một số breakdowns
+        $videoFields = [
+            'video_30_sec_watched_actions', 'video_avg_time_watched_actions',
+            'video_p25_watched_actions', 'video_p50_watched_actions', 
+            'video_p75_watched_actions', 'video_p95_watched_actions', 'video_p100_watched_actions'
+        ];
+        
+        // Kiểm tra breakdown có hỗ trợ video metrics không
+        $restrictedBreakdowns = ['region', 'dma', 'hourly_stats_aggregated_by_advertiser_time_zone', 'hourly_stats_aggregated_by_audience_time_zone'];
+        $supportsVideo = !array_intersect($breakdowns, $restrictedBreakdowns);
+        
+        $fields = $baseFields;
+        if ($supportsVideo) {
+            $fields = array_merge($fields, $videoFields);
+        }
+        
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => implode(',', $fields),
+            'breakdowns' => implode(',', $breakdowns),
+            'time_range' => json_encode([
+                'since' => date('Y-m-d', strtotime('-36 months')),
+                'until' => date('Y-m-d')
+            ])
+        ];
+
+        $result = $this->makeRequest($url, $params);
+        
+        Log::info("Ad Insights with breakdowns", [
+            'ad_id' => $adId,
+            'breakdowns' => $breakdowns,
+            'supports_video' => $supportsVideo,
+            'has_data' => isset($result['data']) && !empty($result['data'])
+        ]);
+
+        return $result;
+    }
+
+    /**
+     * Lấy Insights với breakdown theo age và gender (permutation được hỗ trợ)
+     * Sử dụng endpoint insights thay vì statuses (deprecated)
+     */
+    public function getInsightsWithAgeGenderBreakdown(string $objectId, string $objectType = 'ad'): array
+    {
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$objectId}/insights";
+        
+        $fields = 'impressions,reach,clicks,ctr,cpc,cpm,spend,frequency,actions,action_values,';
+        
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => $fields,
+            'breakdowns' => 'age,gender',
+            'time_range' => json_encode([
+                'since' => date('Y-m-d', strtotime('-36 months')),
+                'until' => date('Y-m-d')
+            ])
+        ];
+
+        return $this->makeRequest($url, $params);
+    }
+
+    /**
+     * Lấy Insights với breakdown theo region (permutation được hỗ trợ)
+     * Sử dụng endpoint insights thay vì statuses (deprecated)
+     */
+    public function getInsightsWithRegionBreakdown(string $objectId, string $objectType = 'ad'): array
+    {
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$objectId}/insights";
+        
+        // Region breakdown không hỗ trợ video metrics
+        $fields = 'impressions,reach,clicks,ctr,cpc,cpm,spend,frequency,actions,action_values';
+        
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => $fields,
+            'breakdowns' => 'region',
+            'time_range' => json_encode([
+                'since' => date('Y-m-d', strtotime('-36 months')),
+                'until' => date('Y-m-d')
+            ])
+        ];
+
+        return $this->makeRequest($url, $params);
+    }
+
+    /**
+     * Lấy Insights với breakdown theo platform_position (permutation được hỗ trợ)
+     * Sử dụng endpoint insights thay vì statuses (deprecated)
+     */
+    public function getInsightsWithPlatformPositionBreakdown(string $objectId, string $objectType = 'ad'): array
+    {
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$objectId}/insights";
+        
+        $fields = 'impressions,reach,clicks,ctr,cpc,cpm,spend,frequency,actions,action_values,';
+        
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => $fields,
+            'breakdowns' => 'platform_position',
+            'time_range' => json_encode([
+                'since' => date('Y-m-d', strtotime('-36 months')),
+                'until' => date('Y-m-d')
+            ])
+        ];
+
+        return $this->makeRequest($url, $params);
+    }
+
+    /**
+     * Lấy Insights với breakdown theo publisher_platform (permutation được hỗ trợ)
+     */
+    public function getInsightsWithPublisherPlatformBreakdown(string $objectId, string $objectType = 'ad'): array
+    {
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$objectId}/insights";
+        
+        $fields = 'impressions,reach,clicks,ctr,cpc,cpm,spend,frequency,actions,action_values,';
+        
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => $fields,
+            'breakdowns' => 'publisher_platform',
+            'time_range' => json_encode([
+                'since' => date('Y-m-d', strtotime('-36 months')),
+                'until' => date('Y-m-d')
+            ])
+        ];
+
+        return $this->makeRequest($url, $params);
+    }
+
+    /**
+     * Lấy Insights với breakdown theo device_platform (permutation được hỗ trợ)
+     */
+    public function getInsightsWithDevicePlatformBreakdown(string $objectId, string $objectType = 'ad'): array
+    {
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$objectId}/insights";
+        
+        $fields = 'impressions,reach,clicks,ctr,cpc,cpm,spend,frequency,actions,action_values,';
+        
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => $fields,
+            'breakdowns' => 'device_platform',
+            'time_range' => json_encode([
+                'since' => date('Y-m-d', strtotime('-36 months')),
+                'until' => date('Y-m-d')
+            ])
+        ];
+
+        return $this->makeRequest($url, $params);
+    }
+
+    /**
+     * Lấy Insights với breakdown theo country (permutation được hỗ trợ)
+     */
+    public function getInsightsWithCountryBreakdown(string $objectId, string $objectType = 'ad'): array
+    {
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$objectId}/insights";
+        
+        $fields = 'impressions,reach,clicks,ctr,cpc,cpm,spend,frequency,actions,action_values,';
+        
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => $fields,
+            'breakdowns' => 'country',
+            'time_range' => json_encode([
+                'since' => date('Y-m-d', strtotime('-36 months')),
+                'until' => date('Y-m-d')
+            ])
+        ];
+
+        return $this->makeRequest($url, $params);
+    }
+
+    /**
+     * Lấy Insights với breakdown theo impression_device (permutation được hỗ trợ)
+     */
+    public function getInsightsWithImpressionDeviceBreakdown(string $objectId, string $objectType = 'ad'): array
+    {
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$objectId}/insights";
+        
+        $fields = 'impressions,reach,clicks,ctr,cpc,cpm,spend,frequency,actions,action_values,,thruplays';
+        
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => $fields,
+            'breakdowns' => 'impression_device',
+            'time_range' => json_encode([
+                'since' => date('Y-m-d', strtotime('-36 months')),
+                'until' => date('Y-m-d')
+            ])
+        ];
+
+        return $this->makeRequest($url, $params);
+    }
+
+    /**
+     * Lấy Insights với breakdown theo action_type (permutation được hỗ trợ)
+     */
+    public function getInsightsWithActionTypeBreakdown(string $objectId, string $objectType = 'ad'): array
+    {
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$objectId}/insights";
+        
+        $fields = 'impressions,reach,clicks,ctr,cpc,cpm,spend,frequency,actions,action_values,,thruplays';
+        
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => $fields,
+            'action_breakdowns' => 'action_type',
+            'time_range' => json_encode([
+                'since' => date('Y-m-d', strtotime('-36 months')),
+                'until' => date('Y-m-d')
+            ])
+        ];
+
+        return $this->makeRequest($url, $params);
+    }
+
+    /**
+     * Lấy Insights với breakdown theo action_device (permutation được hỗ trợ)
+     */
+    public function getInsightsWithActionDeviceBreakdown(string $objectId, string $objectType = 'ad'): array
+    {
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$objectId}/insights";
+        
+        $fields = 'impressions,reach,clicks,ctr,cpc,cpm,spend,frequency,actions,action_values,,thruplays';
+        
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => $fields,
+            'action_breakdowns' => 'action_device',
+            'time_range' => json_encode([
+                'since' => date('Y-m-d', strtotime('-36 months')),
+                'until' => date('Y-m-d')
+            ])
+        ];
+
+        return $this->makeRequest($url, $params);
+    }
+
+    /**
+     * Lấy Insights với breakdown theo action_destination (permutation được hỗ trợ)
+     */
+    public function getInsightsWithActionDestinationBreakdown(string $objectId, string $objectType = 'ad'): array
+    {
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$objectId}/insights";
+        
+        $fields = 'impressions,reach,clicks,ctr,cpc,cpm,spend,frequency,actions,action_values,,thruplays';
+        
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => $fields,
+            'action_breakdowns' => 'action_destination',
+            'time_range' => json_encode([
+                'since' => date('Y-m-d', strtotime('-36 months')),
+                'until' => date('Y-m-d')
+            ])
+        ];
+
+        return $this->makeRequest($url, $params);
+    }
+
+    /**
+     * Lấy Insights với breakdown theo action_target_id (permutation được hỗ trợ)
+     */
+    public function getInsightsWithActionTargetIdBreakdown(string $objectId, string $objectType = 'ad'): array
+    {
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$objectId}/insights";
+        
+        $fields = 'impressions,reach,clicks,ctr,cpc,cpm,spend,frequency,actions,action_values,,thruplays';
+        
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => $fields,
+            'action_breakdowns' => 'action_target_id',
+            'time_range' => json_encode([
+                'since' => date('Y-m-d', strtotime('-36 months')),
+                'until' => date('Y-m-d')
+            ])
+        ];
+
+        return $this->makeRequest($url, $params);
+    }
+
+    /**
+     * Lấy Insights với breakdown theo action_reaction (permutation được hỗ trợ)
+     */
+    public function getInsightsWithActionReactionBreakdown(string $objectId, string $objectType = 'ad'): array
+    {
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$objectId}/insights";
+        
+        $fields = 'impressions,reach,clicks,ctr,cpc,cpm,spend,frequency,actions,action_values,,thruplays';
+        
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => $fields,
+            'action_breakdowns' => 'action_reaction',
+            'time_range' => json_encode([
+                'since' => date('Y-m-d', strtotime('-36 months')),
+                'until' => date('Y-m-d')
+            ])
+        ];
+
+        return $this->makeRequest($url, $params);
+    }
+
+    /**
+     * Lấy Insights với breakdown theo action_video_sound (permutation được hỗ trợ)
+     */
+    public function getInsightsWithActionVideoSoundBreakdown(string $objectId, string $objectType = 'ad'): array
+    {
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$objectId}/insights";
+        
+        $fields = 'impressions,reach,clicks,ctr,cpc,cpm,spend,frequency,actions,action_values,,thruplays';
+        
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => $fields,
+            'action_breakdowns' => 'action_video_sound',
+            'time_range' => json_encode([
+                'since' => date('Y-m-d', strtotime('-36 months')),
+                'until' => date('Y-m-d')
+            ])
+        ];
+
+        return $this->makeRequest($url, $params);
+    }
+
+    /**
+     * Lấy Insights với breakdown theo action_video_type (permutation được hỗ trợ)
+     */
+    public function getInsightsWithActionVideoTypeBreakdown(string $objectId, string $objectType = 'ad'): array
+    {
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$objectId}/insights";
+        
+        $fields = 'impressions,reach,clicks,ctr,cpc,cpm,spend,frequency,actions,action_values,,thruplays';
+        
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => $fields,
+            'action_breakdowns' => 'action_video_type',
+            'time_range' => json_encode([
+                'since' => date('Y-m-d', strtotime('-36 months')),
+                'until' => date('Y-m-d')
+            ])
+        ];
+
+        return $this->makeRequest($url, $params);
+    }
+
+    /**
+     * Lấy Insights với breakdown theo action_carousel_card_id (permutation được hỗ trợ)
+     */
+    public function getInsightsWithActionCarouselCardIdBreakdown(string $objectId, string $objectType = 'ad'): array
+    {
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$objectId}/insights";
+        
+        $fields = 'impressions,reach,clicks,ctr,cpc,cpm,spend,frequency,actions,action_values,,thruplays';
+        
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => $fields,
+            'action_breakdowns' => 'action_carousel_card_id',
+            'time_range' => json_encode([
+                'since' => date('Y-m-d', strtotime('-36 months')),
+                'until' => date('Y-m-d')
+            ])
+        ];
+
+        return $this->makeRequest($url, $params);
+    }
+
+    /**
+     * Lấy Insights với breakdown theo action_carousel_card_name (permutation được hỗ trợ)
+     */
+    public function getInsightsWithActionCarouselCardNameBreakdown(string $objectId, string $objectType = 'ad'): array
+    {
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$objectId}/insights";
+        
+        $fields = 'impressions,reach,clicks,ctr,cpc,cpm,spend,frequency,actions,action_values,,thruplays';
+        
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => $fields,
+            'action_breakdowns' => 'action_carousel_card_name',
+            'time_range' => json_encode([
+                'since' => date('Y-m-d', strtotime('-36 months')),
+                'until' => date('Y-m-d')
+            ])
+        ];
+
+        return $this->makeRequest($url, $params);
+    }
+
+    /**
+     * Lấy Insights với breakdown theo action_canvas_component_name (permutation được hỗ trợ)
+     */
+    public function getInsightsWithActionCanvasComponentNameBreakdown(string $objectId, string $objectType = 'ad'): array
+    {
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$objectId}/insights";
+        
+        $fields = 'impressions,reach,clicks,ctr,cpc,cpm,spend,frequency,actions,action_values,,thruplays';
+        
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => $fields,
+            'action_breakdowns' => 'action_canvas_component_name',
+            'time_range' => json_encode([
+                'since' => date('Y-m-d', strtotime('-36 months')),
+                'until' => date('Y-m-d')
+            ])
+        ];
+
+        return $this->makeRequest($url, $params);
+    }
+
+    /**
+     * Lấy Insights với action breakdown (theo tài liệu Facebook)
+     * Sử dụng endpoint insights thay vì statuses (deprecated)
+     */
+    public function getInsightsWithActionBreakdown(string $objectId, string $objectType = 'ad', array $actionBreakdowns = ['action_type', 'action_device']): array
+    {
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$objectId}/insights";
+        
+        $fields = 'impressions,reach,clicks,ctr,cpc,cpm,spend,frequency,actions,action_values,,thruplays';
+        
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => $fields,
+            'action_breakdowns' => implode(',', $actionBreakdowns),
+            'time_range' => json_encode([
+                'since' => date('Y-m-d', strtotime('-36 months')),
+                'until' => date('Y-m-d')
+            ])
+        ];
+
+        return $this->makeRequest($url, $params);
+    }
+
+    /**
+     * Lấy chi tiết Ad
+     */
+    public function getAdDetails(string $adId): array
+    {
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$adId}";
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => 'id,name,status,effective_status,creative{id,name,object_type,object_story_spec,thumbnail_url,asset_feed_spec,object_story_id,effective_object_story_id},created_time,updated_time'
+        ];
+
+        return $this->makeRequest($url, $params);
+    }
+
+    /**
+     * Lấy Page Insights (thay thế cho statuses API deprecated)
+     */
+    public function getPageInsights(string $pageId): array
+    {
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$pageId}/insights";
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => 'page_impressions,page_impressions_unique,page_engaged_users,page_consumptions,page_consumptions_unique,page_negative_feedback,page_negative_feedback_unique,page_positive_feedback_by_type,page_fans,page_fan_adds,page_fan_removes',
+            'time_range' => json_encode([
+                'since' => date('Y-m-d', strtotime('-30 days')),
+                'until' => date('Y-m-d')
+            ])
+        ];
+
+        return $this->makeRequest($url, $params);
+    }
+
+    /**
+     * Lấy Campaign Insights (thay thế cho statuses API deprecated)
+     */
+    public function getCampaignInsights(string $campaignId): array
+    {
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$campaignId}/insights";
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => 'spend,reach,impressions,clicks,ctr,cpc,cpm,frequency,unique_clicks,actions,action_values,cost_per_action_type,cost_per_unique_action_type,video_avg_time_watched_actions,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p100_watched_actions',
+            'time_range' => json_encode([
+                'since' => date('Y-m-d', strtotime('-36 months')),
+                'until' => date('Y-m-d')
+            ])
+        ];
+
+        return $this->makeRequest($url, $params);
+    }
+
+    /**
+     * Lấy Ad Set Insights (thay thế cho statuses API deprecated)
+     */
+    public function getAdSetInsights(string $adSetId): array
+    {
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$adSetId}/insights";
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => 'spend,reach,impressions,clicks,ctr,cpc,cpm,frequency,unique_clicks,actions,action_values,cost_per_action_type,cost_per_unique_action_type,video_avg_time_watched_actions,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p100_watched_actions',
+            'time_range' => json_encode([
+                'since' => date('Y-m-d', strtotime('-36 months')),
+                'until' => date('Y-m-d')
+            ])
+        ];
+
+        return $this->makeRequest($url, $params);
+    }
+
+    /**
+     * Lấy Insights với breakdown theo DMA (Designated Market Area - chỉ cho US)
+     */
+    public function getInsightsWithDMABreakdown(string $objectId): array
+    {
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$objectId}/insights";
+        
+        $fields = 'impressions,reach,clicks,ctr,cpc,cpm,spend,frequency,actions,action_values';
+        // DMA không hỗ trợ video metrics
+        
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => $fields,
+            'breakdowns' => 'dma',
+            'time_range' => json_encode([
+                'since' => date('Y-m-d', strtotime('-36 months')),
+                'until' => date('Y-m-d')
+            ])
+        ];
+
+        return $this->makeRequest($url, $params);
+    }
+
+    /**
+     * Lấy Insights với breakdown theo hourly stats (theo múi giờ của advertiser)
+     */
+    public function getInsightsWithHourlyStatsAdvertiserBreakdown(string $objectId): array
+    {
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$objectId}/insights";
+        
+        $fields = 'impressions,clicks,ctr,cpc,cpm,spend,actions,action_values';
+        // Hourly breakdowns không hỗ trợ reach, frequency, unique fields
+        
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => $fields,
+            'breakdowns' => 'hourly_stats_aggregated_by_advertiser_time_zone',
+            'time_range' => json_encode([
+                'since' => date('Y-m-d', strtotime('-36 months')),
+                'until' => date('Y-m-d')
+            ])
+        ];
+
+        return $this->makeRequest($url, $params);
+    }
+
+    /**
+     * Lấy Insights với breakdown theo hourly stats (theo múi giờ của audience)
+     */
+    public function getInsightsWithHourlyStatsAudienceBreakdown(string $objectId): array
+    {
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$objectId}/insights";
+        
+        $fields = 'impressions,clicks,ctr,cpc,cpm,spend,actions,action_values';
+        // Hourly breakdowns không hỗ trợ reach, frequency, unique fields
+        
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => $fields,
+            'breakdowns' => 'hourly_stats_aggregated_by_audience_time_zone',
+            'time_range' => json_encode([
+                'since' => date('Y-m-d', strtotime('-36 months')),
+                'until' => date('Y-m-d')
+            ])
+        ];
+
+        return $this->makeRequest($url, $params);
+    }
+
+    /**
+     * Lấy Insights với breakdown theo product_id (cho Dynamic Ads)
+     */
+    public function getInsightsWithProductIdBreakdown(string $objectId): array
+    {
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$objectId}/insights";
+        
+        $fields = 'impressions,reach,clicks,ctr,cpc,cpm,spend,frequency,actions,action_values,,thruplays';
+        
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => $fields,
+            'breakdowns' => 'product_id',
+            'time_range' => json_encode([
+                'since' => date('Y-m-d', strtotime('-36 months')),
+                'until' => date('Y-m-d')
+            ])
+        ];
+
+        return $this->makeRequest($url, $params);
+    }
+
+    /**
+     * Lấy Insights với breakdown theo frequency_value (cho Reach and Frequency campaigns)
+     */
+    public function getInsightsWithFrequencyValueBreakdown(string $objectId): array
+    {
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$objectId}/insights";
+        
+        $fields = 'reach,frequency';
+        // frequency_value chỉ hỗ trợ với reach
+        
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => $fields,
+            'breakdowns' => 'frequency_value',
+            'time_range' => json_encode([
+                'since' => date('Y-m-d', strtotime('-36 months')),
+                'until' => date('Y-m-d')
+            ])
+        ];
+
+        return $this->makeRequest($url, $params);
+    }
+
+    /**
+     * Lấy Insights với breakdown theo user_segment_key (cho Advantage+ Shopping Campaigns)
+     */
+    public function getInsightsWithUserSegmentBreakdown(string $objectId): array
+    {
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$objectId}/insights";
+        
+        $fields = 'impressions,reach,clicks,ctr,cpc,cpm,spend,frequency,actions,action_values,,thruplays';
+        
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => $fields,
+            'breakdowns' => 'user_segment_key',
+            'time_range' => json_encode([
+                'since' => date('Y-m-d', strtotime('-36 months')),
+                'until' => date('Y-m-d')
+            ])
+        ];
+
+        return $this->makeRequest($url, $params);
+    }
+
+    /**
+     * Lấy Insights với breakdown theo place_page_id (cho Place ads)
+     */
+    public function getInsightsWithPlacePageBreakdown(string $objectId): array
+    {
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$objectId}/insights";
+        
+        $fields = 'impressions,clicks,ctr,cpc,cpm,spend,actions,action_values';
+        // place_page_id không hỗ trợ reach, frequency
+        
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => $fields,
+            'breakdowns' => 'place_page_id',
+            'time_range' => json_encode([
+                'since' => date('Y-m-d', strtotime('-36 months')),
+                'until' => date('Y-m-d')
+            ])
+        ];
+
+        return $this->makeRequest($url, $params);
+    }
+
+    /**
+     * Lấy Insights với breakdown theo app_id (cho app installs)
+     */
+    public function getInsightsWithAppIdBreakdown(string $objectId): array
+    {
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$objectId}/insights";
+        
+        $fields = 'total_postbacks';
+        // app_id chỉ hỗ trợ total_postbacks field
+        
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => $fields,
+            'breakdowns' => 'app_id',
+            'time_range' => json_encode([
+                'since' => date('Y-m-d', strtotime('-36 months')),
+                'until' => date('Y-m-d')
+            ])
+        ];
+
+        return $this->makeRequest($url, $params);
+    }
+
+    /**
+     * Lấy Insights với breakdown theo skan_conversion_id (cho iOS 15+ SKAdNetwork)
+     */
+    public function getInsightsWithSkanConversionIdBreakdown(string $objectId): array
+    {
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$objectId}/insights";
+        
+        $fields = 'total_postbacks';
+        // skan_conversion_id chỉ hỗ trợ total_postbacks field
+        
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => $fields,
+            'breakdowns' => 'skan_conversion_id',
+            'time_range' => json_encode([
+                'since' => date('Y-m-d', strtotime('-36 months')),
+                'until' => date('Y-m-d')
+            ])
+        ];
+
+        return $this->makeRequest($url, $params);
+    }
+
+    /**
+     * Lấy Insights với breakdown theo skan_campaign_id (cho iOS 15+ SKAdNetwork)
+     */
+    public function getInsightsWithSkanCampaignIdBreakdown(string $objectId): array
+    {
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$objectId}/insights";
+        
+        $fields = 'total_postbacks_detailed';
+        // skan_campaign_id chỉ hỗ trợ total_postbacks_detailed field
+        
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => $fields,
+            'breakdowns' => 'skan_campaign_id',
+            'time_range' => json_encode([
+                'since' => date('Y-m-d', strtotime('-36 months')),
+                'until' => date('Y-m-d')
+            ])
+        ];
+
+        return $this->makeRequest($url, $params);
+    }
+
+    /**
+     * Lấy Insights với breakdown theo is_conversion_id_modeled (cho modeled conversions)
+     */
+    public function getInsightsWithConversionIdModeledBreakdown(string $objectId): array
+    {
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$objectId}/insights";
+        
+        $fields = 'total_postbacks_detailed';
+        // is_conversion_id_modeled chỉ hỗ trợ total_postbacks_detailed field
+        
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => $fields,
+            'breakdowns' => 'is_conversion_id_modeled',
+            'time_range' => json_encode([
+                'since' => date('Y-m-d', strtotime('-36 months')),
+                'until' => date('Y-m-d')
+            ])
+        ];
+
+        return $this->makeRequest($url, $params);
+    }
+
+    /**
+     * Lấy Insights với breakdown theo Dynamic Creative assets
+     */
+    public function getInsightsWithDynamicCreativeBreakdown(string $objectId, string $assetType): array
+    {
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$objectId}/insights";
+        
+        $fields = 'impressions,clicks,spend,reach,actions,action_values';
+        // Dynamic Creative breakdowns chỉ hỗ trợ limited metrics
+        
+        $validAssetTypes = [
+            'ad_format_asset', 'body_asset', 'call_to_action_asset', 
+            'description_asset', 'image_asset', 'link_url_asset', 
+            'title_asset', 'video_asset'
+        ];
+        
+        if (!in_array($assetType, $validAssetTypes)) {
+            throw new \InvalidArgumentException("Invalid asset type. Must be one of: " . implode(', ', $validAssetTypes));
+        }
+        
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => $fields,
+            'breakdowns' => $assetType,
+            'time_range' => json_encode([
+                'since' => date('Y-m-d', strtotime('-36 months')),
+                'until' => date('Y-m-d')
+            ])
+        ];
+
+        return $this->makeRequest($url, $params);
+    }
+
+    /**
+     * Lấy Ad Sets cho một Campaign
+     */
+    public function getAdSets(string $campaignId): array
+    {
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$campaignId}/adsets";
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => 'id,name,status,created_time,updated_time'
+        ];
+
+        return $this->makeRequest($url, $params);
+    }
+
+    /**
+     * Lấy Ads cho một Ad Set
+     */
+    public function getAds(string $adSetId): array
+    {
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$adSetId}/ads";
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => 'id,name,status,effective_status,creative,created_time,updated_time'
+        ];
+
+        return $this->makeRequest($url, $params);
+    }
+
+    /**
+     * Lấy Ad Insights với tất cả breakdowns cần thiết cho video metrics
+     */
+    public function getCompleteAdInsights(string $adId): array
+    {
+        $results = [];
+        
+        // 1. Lấy insights cơ bản (không breakdown)
+        $results['basic'] = $this->getInsightsForAd($adId);
+        
+        // 2. Lấy insights với các breakdowns quan trọng
+        $breakdownGroups = [
+            'demographics' => ['age', 'gender'],
+            'geographic' => ['country'],
+            'platform' => ['publisher_platform', 'platform_position'],
+            'device' => ['device_platform', 'impression_device'],
+            'action_type' => []  // Sử dụng action_breakdowns
+        ];
+        
+        foreach ($breakdownGroups as $group => $breakdowns) {
+            if ($group === 'action_type') {
+                $results[$group] = $this->getInsightsWithActionBreakdowns($adId, ['action_type']);
+            } else {
+                $results[$group] = $this->getInsightsForAdWithBreakdowns($adId, $breakdowns);
+            }
+        }
+        
+        return $results;
+    }
+    
+    /**
+     * Lấy Insights với action breakdowns
+     */
+    public function getInsightsWithActionBreakdowns(string $adId, array $actionBreakdowns = ['action_type']): array
+    {
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$adId}/insights";
+        
+        $fields = [
+            'spend', 'reach', 'impressions', 'clicks', 'ctr', 'cpc', 'cpm', 'frequency',
+            'unique_clicks', 'actions', 'action_values', 'ad_name', 'ad_id',
+            'video_30_sec_watched_actions', 'video_avg_time_watched_actions',
+            'video_p25_watched_actions', 'video_p50_watched_actions', 
+            'video_p75_watched_actions', 'video_p95_watched_actions', 'video_p100_watched_actions'
+        ];
+        
+        $params = [
+            'access_token' => $this->accessToken,
+            'fields' => implode(',', $fields),
+            'action_breakdowns' => implode(',', $actionBreakdowns),
+            'time_range' => json_encode([
+                'since' => date('Y-m-d', strtotime('-7 days')),
+                'until' => date('Y-m-d')
+            ])
+        ];
+
+        $result = $this->makeRequest($url, $params);
+        
+        Log::info("Ad Insights with action breakdowns", [
+            'ad_id' => $adId,
+            'action_breakdowns' => $actionBreakdowns,
+            'has_data' => isset($result['data']) && !empty($result['data'])
+        ]);
+
+        return $result;
+    }
+
+    /**
+     * Lấy tất cả breakdowns có sẵn cho một object
+     */
+    public function getAllAvailableBreakdowns(): array
+    {
+        return [
+            'demographics' => [
+                'age' => 'Độ tuổi',
+                'gender' => 'Giới tính',
+                'age,gender' => 'Độ tuổi và giới tính'
+            ],
+            'geographic' => [
+                'country' => 'Quốc gia',
+                'region' => 'Khu vực',
+                'dma' => 'Designated Market Area (chỉ US)'
+            ],
+            'platform' => [
+                'publisher_platform' => 'Nền tảng (Facebook, Instagram, Audience Network)',
+                'platform_position' => 'Vị trí trên nền tảng',
+                'device_platform' => 'Loại thiết bị (mobile, desktop)',
+                'impression_device' => 'Thiết bị cụ thể (iPhone, Android, Desktop)'
+            ],
+            'time' => [
+                'hourly_stats_aggregated_by_advertiser_time_zone' => 'Theo giờ (múi giờ advertiser)',
+                'hourly_stats_aggregated_by_audience_time_zone' => 'Theo giờ (múi giờ audience)'
+            ],
+            'actions' => [
+                'action_type' => 'Loại hành động',
+                'action_device' => 'Thiết bị thực hiện hành động',
+                'action_destination' => 'Đích đến của hành động',
+                'action_target_id' => 'ID đích đến',
+                'action_reaction' => 'Loại reaction (Like, Love, Haha, etc.)',
+                'action_video_sound' => 'Trạng thái âm thanh video (on/off)',
+                'action_video_type' => 'Loại video',
+                'action_carousel_card_id' => 'ID card carousel',
+                'action_carousel_card_name' => 'Tên card carousel',
+                'action_canvas_component_name' => 'Tên component Canvas'
+            ],
+            'campaign_specific' => [
+                'frequency_value' => 'Giá trị frequency (Reach & Frequency campaigns)',
+                'user_segment_key' => 'Phân khúc người dùng (Advantage+ Shopping)',
+                'product_id' => 'ID sản phẩm (Dynamic Ads)',
+                'place_page_id' => 'ID trang địa điểm (Place ads)'
+            ],
+            'app_tracking' => [
+                'app_id' => 'ID ứng dụng',
+                'skan_conversion_id' => 'SKAdNetwork Conversion ID',
+                'skan_campaign_id' => 'SKAdNetwork Campaign ID',
+                'is_conversion_id_modeled' => 'Modeled conversion ID'
+            ],
+            'dynamic_creative' => [
+                'ad_format_asset' => 'Ad format asset',
+                'body_asset' => 'Body asset',
+                'call_to_action_asset' => 'Call to action asset',
+                'description_asset' => 'Description asset',
+                'image_asset' => 'Image asset',
+                'link_url_asset' => 'Link URL asset',
+                'title_asset' => 'Title asset',
+                'video_asset' => 'Video asset'
+            ]
+        ];
     }
 }

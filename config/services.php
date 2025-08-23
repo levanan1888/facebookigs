@@ -35,7 +35,7 @@ return [
         'ads_token' => env('FACEBOOK_ADS_TOKEN'),
         'app_id' => env('FACEBOOK_APP_ID'),
         'app_secret' => env('FACEBOOK_APP_SECRET'),
-        'api_version' => env('FACEBOOK_API_VERSION', 'v18.0'),
+        'api_version' => env('FACEBOOK_API_VERSION', 'v19.0'),
         'graph_url' => env('FACEBOOK_GRAPH_URL', 'https://graph.facebook.com'),
         'batch_size' => env('FACEBOOK_BATCH_SIZE', 100),
         'timeout' => env('FACEBOOK_TIMEOUT', 30),

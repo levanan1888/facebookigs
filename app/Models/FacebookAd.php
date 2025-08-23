@@ -11,47 +11,11 @@ class FacebookAd extends Model
     protected $keyType = 'string';
     protected $fillable = [
         'id', 'name', 'status', 'effective_status', 'adset_id', 'campaign_id', 'account_id', 
-        'creative', 'created_time', 'updated_time',
-        // Creative link fields
-        'creative_link_url', 'creative_link_message', 'creative_link_name',
-        'creative_image_hash', 'creative_call_to_action_type', 'creative_page_welcome_message',
-        // Post fields
-        'post_id', 'page_id', 'post_message', 'post_type', 'post_status_type',
-        'post_attachments', 'post_permalink_url', 'post_created_time', 'post_updated_time',
-        // Post insights fields
-        'post_impressions', 'post_reach', 'post_clicks', 'post_unique_clicks',
-        'post_likes', 'post_shares', 'post_comments', 'post_reactions',
-        'post_saves', 'post_hides', 'post_hide_all_clicks', 'post_unlikes',
-        'post_negative_feedback', 'post_video_views', 'post_video_view_time',
-        'post_video_avg_time_watched', 'post_video_p25_watched_actions',
-        'post_video_p50_watched_actions', 'post_video_p75_watched_actions',
-        'post_video_p95_watched_actions', 'post_video_p100_watched_actions',
-        'post_engagement_rate', 'post_ctr', 'post_cpm', 'post_cpc',
-        'post_spend', 'post_frequency', 'post_actions', 'post_action_values',
-        'post_cost_per_action_type', 'post_cost_per_unique_action_type', 'post_breakdowns',
-        // Ad insights fields
-        'ad_spend', 'ad_reach', 'ad_impressions', 'ad_clicks', 'ad_ctr',
-        'ad_cpc', 'ad_cpm', 'ad_frequency', 'ad_unique_clicks', 'ad_actions',
-        'ad_action_values', 'ad_purchase_roas',
-        // Metadata fields
-        'post_metadata', 'insights_metadata', 'last_insights_sync'
+        'post_id', 'page_id', 'created_time', 'updated_time', 'last_insights_sync'
     ];
     protected $casts = [
-        'creative' => 'array',
         'created_time' => 'datetime',
         'updated_time' => 'datetime',
-        'post_attachments' => 'array',
-        'post_created_time' => 'datetime',
-        'post_updated_time' => 'datetime',
-        'post_actions' => 'array',
-        'post_action_values' => 'array',
-        'post_cost_per_action_type' => 'array',
-        'post_cost_per_unique_action_type' => 'array',
-        'post_breakdowns' => 'array',
-        'ad_actions' => 'array',
-        'ad_action_values' => 'array',
-        'post_metadata' => 'array',
-        'insights_metadata' => 'array',
         'last_insights_sync' => 'datetime',
     ];
 
@@ -79,6 +43,38 @@ class FacebookAd extends Model
         return $this->belongsTo(FacebookCampaign::class, 'campaign_id', 'id');
     }
 
+    /**
+     * Relationship với Post
+     */
+    public function post()
+    {
+        return $this->belongsTo(FacebookPost::class, 'post_id', 'id');
+    }
+
+    /**
+     * Relationship với Page
+     */
+    public function page()
+    {
+        return $this->belongsTo(FacebookPage::class, 'page_id', 'id');
+    }
+
+    /**
+     * Relationship với Ad Insights
+     */
+    public function insights()
+    {
+        return $this->hasMany(FacebookAdInsight::class, 'ad_id', 'id');
+    }
+
+    /**
+     * Relationship với Creative
+     */
+    public function creative()
+    {
+        return $this->hasOne(FacebookCreative::class, 'ad_id', 'id');
+    }
+
     // Scopes
     /**
      * Scope: Lấy ads có post
@@ -94,14 +90,6 @@ class FacebookAd extends Model
     public function scopeWithInsights($query)
     {
         return $query->whereNotNull('last_insights_sync');
-    }
-
-    /**
-     * Scope: Lọc theo loại post
-     */
-    public function scopeByPostType($query, $type)
-    {
-        return $query->where('post_type', $type);
     }
 
     /**

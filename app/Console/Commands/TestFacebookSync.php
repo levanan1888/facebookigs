@@ -15,83 +15,92 @@ class TestFacebookSync extends Command
      *
      * @var string
      */
-    protected $signature = 'facebook:test-sync {--limit=5 : Số lượng business manager tối đa để test}';
+    protected $signature = 'facebook:test-sync {--since= : Start date (Y-m-d)} {--until= : End date (Y-m-d)}';
 
     /**
      * The console command description.
      *
      * @var string
      */
-    protected $description = 'Test đồng bộ Facebook Ads với logging chi tiết';
+    protected $description = 'Test Facebook Ads sync với progress callback';
 
     /**
      * Execute the console command.
      */
     public function handle(FacebookAdsSyncService $syncService): int
     {
-        $this->info('🚀 Bắt đầu test đồng bộ Facebook Ads...');
+        $this->info('🚀 Bắt đầu test Facebook Ads sync...');
         
-        // Clear cache stop request
-        \Illuminate\Support\Facades\Cache::forget('facebook_sync_stop_requested');
+        $since = $this->option('since') ?: now()->subDays(7)->format('Y-m-d');
+        $until = $this->option('until') ?: now()->format('Y-m-d');
         
-        $limit = (int) $this->option('limit');
-        $this->info("📊 Giới hạn test: {$limit} business managers");
+        $this->info("📅 Time range: {$since} đến {$until}");
+        
+        // Progress callback
+        $onProgress = function (array $progress) {
+            $this->info("📊 {$progress['message']}");
+            $this->table(
+                ['Metric', 'Count'],
+                [
+                    ['Businesses', $progress['counts']['businesses']],
+                    ['Ad Accounts', $progress['counts']['accounts']],
+                    ['Campaigns', $progress['counts']['campaigns']],
+                    ['Ad Sets', $progress['counts']['adsets']],
+                    ['Ads', $progress['counts']['ads']],
+                    ['Posts', $progress['counts']['posts']],
+                    ['Pages', $progress['counts']['pages']],
+                    ['Post Insights', $progress['counts']['post_insights']],
+                    ['Ad Insights', $progress['counts']['ad_insights']],
+                ]
+            );
+            
+            if (!empty($progress['errors'])) {
+                $this->error('❌ Errors:');
+                foreach ($progress['errors'] as $error) {
+                    $this->error("- {$error['stage']}: {$error['error']}");
+                }
+            }
+            
+            $this->newLine();
+        };
         
         try {
-            $result = $syncService->syncYesterday(function (array $progress) {
-                $this->info("📈 Tiến độ: {$progress['stage']}");
-                $this->table(
-                    ['Loại', 'Số lượng'],
-                    [
-                        ['Businesses', $progress['counts']['businesses']],
-                        ['Accounts', $progress['counts']['accounts']],
-                        ['Campaigns', $progress['counts']['campaigns']],
-                        ['Ad Sets', $progress['counts']['adsets']],
-                        ['Ads', $progress['counts']['ads']],
-                        ['Pages', $progress['counts']['pages']],
-                        ['Posts', $progress['counts']['posts']],
-                        ['Insights', $progress['counts']['insights']],
-                    ]
-                );
-                
-                if (!empty($progress['errors'])) {
-                    $this->error('❌ Có lỗi xảy ra:');
-                    foreach ($progress['errors'] as $error) {
-                        $this->error("- {$error['stage']}: " . json_encode($error['error']));
-                    }
-                }
-            });
+            $result = $syncService->syncFacebookData($onProgress, $since, $until);
             
-            $this->info('✅ Đồng bộ hoàn thành!');
+            $this->info('✅ Sync completed!');
             $this->table(
-                ['Loại', 'Số lượng'],
+                ['Metric', 'Count'],
                 [
                     ['Businesses', $result['businesses']],
-                    ['Accounts', $result['accounts']],
+                    ['Ad Accounts', $result['accounts']],
                     ['Campaigns', $result['campaigns']],
                     ['Ad Sets', $result['adsets']],
                     ['Ads', $result['ads']],
-                    ['Pages', $result['pages']],
                     ['Posts', $result['posts']],
-                    ['Insights', $result['insights']],
+                    ['Pages', $result['pages']],
+                    ['Post Insights', $result['post_insights']],
+                    ['Ad Insights', $result['ad_insights']],
                 ]
             );
             
             if (!empty($result['errors'])) {
-                $this->error('❌ Có lỗi xảy ra trong quá trình đồng bộ:');
+                $this->error('❌ Errors occurred:');
                 foreach ($result['errors'] as $error) {
-                    $this->error("- {$error['stage']}: " . json_encode($error['error']));
+                    $this->error("- {$error['stage']}: {$error['error']}");
                 }
             }
+            
+            $this->info("⏱️ Duration: {$result['duration']} seconds");
             
             return self::SUCCESS;
             
         } catch (\Exception $e) {
-            $this->error('❌ Lỗi khi đồng bộ: ' . $e->getMessage());
-            Log::error('Lỗi khi test đồng bộ Facebook', [
+            $this->error("❌ Sync failed: {$e->getMessage()}");
+            Log::error('Facebook sync test failed', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
+            
             return self::FAILURE;
         }
     }
