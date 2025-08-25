@@ -134,8 +134,14 @@ class CrawlPostEngagement extends Command
         $candidateUrls[] = "https://www.facebook.com/{$postId}";
 
         $data = ['reactions' => 0, 'comments' => 0, 'shares' => 0];
+        // Thử headless trước khi UI thuần HTTP nếu cần độ ổn định
+        $headlessTry = $this->facebookService->getPostEngagementCountsViaHeadless($candidateUrls[0] ?? $url);
+        if (($headlessTry['reactions'] ?? 0) > 0 || ($headlessTry['comments'] ?? 0) > 0 || ($headlessTry['shares'] ?? 0) > 0) {
+            $data = $headlessTry;
+        }
         $debug = (bool) $this->option('debug');
         foreach ($candidateUrls as $uiUrl) {
+            if (($data['reactions'] ?? 0) > 0 || ($data['comments'] ?? 0) > 0 || ($data['shares'] ?? 0) > 0) { break; }
             $try = $this->facebookService->getPostEngagementCountsViaUI($uiUrl);
             if ($debug) {
                 Log::info('Crawl UI attempt', [

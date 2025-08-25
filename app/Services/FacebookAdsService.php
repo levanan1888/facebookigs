@@ -6,6 +6,7 @@ namespace App\Services;
 
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Spatie\Browsershot\Browsershot;
 
 class FacebookAdsService
 {
@@ -1933,5 +1934,80 @@ class FacebookAdsService
             return (int) $num;
         }
         return 0;
+    }
+
+    /**
+     * Lấy engagement bằng headless Chrome (Browsershot) – ổn định hơn khi bị chặn.
+     */
+    public function getPostEngagementCountsViaHeadless(string $postUrl): array
+    {
+        try {
+            $cookieStr = (string) (config('services.facebook.crawl_cookie') ?? '');
+            $cookies = $this->parseCookieString($cookieStr);
+            // Bổ sung mặc định
+            $this->ensureCookie($cookies, 'locale', 'vi_VN');
+            $this->ensureCookie($cookies, 'wd', '1366x768');
+
+            $bs = Browsershot::url($postUrl)
+                ->userAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36')
+                ->setCookies($cookies)
+                ->timeout(60)
+                ->setChromeFlags(['--disable-gpu','--no-sandbox','--lang=vi-VN','--disable-dev-shm-usage'])
+                ->waitUntilNetworkIdle()
+                ->setDelay(500);
+
+            $chromePath = (string) (config('services.facebook.chrome_path') ?? '');
+            if ($chromePath !== '') {
+                $bs->setChromePath($chromePath);
+            }
+
+            $html = $bs->bodyHtml();
+
+            if ($html === null || $html === '') {
+                return ['reactions' => 0, 'comments' => 0, 'shares' => 0, 'error' => 'empty_html'];
+            }
+
+            $likes = $this->matchFirstInt($html, '/>([0-9][0-9\.,]*)\s*(?:lượt thích|thích)\b/i');
+            if ($likes === 0) { $likes = $this->matchFirstInt($html, '/([0-9][0-9\.,]*)\s*likes\b/i'); }
+            $comments = $this->matchFirstInt($html, '/([0-9][0-9\.,]*)\s*(?:bình luận|comments)\b/i');
+            $shares = $this->matchFirstInt($html, '/([0-9][0-9\.,]*)\s*(?:lượt chia sẻ|shares)\b/i');
+
+            return [
+                'reactions' => $likes,
+                'comments' => $comments,
+                'shares' => $shares,
+                'raw_html_len' => strlen($html),
+                'source_url' => $postUrl,
+                'http_status' => 200,
+            ];
+
+        } catch (\Throwable $e) {
+            Log::warning('Headless crawl failed', ['url' => $postUrl, 'error' => $e->getMessage()]);
+            return ['reactions' => 0, 'comments' => 0, 'shares' => 0, 'error' => $e->getMessage()];
+        }
+    }
+
+    private function parseCookieString(string $cookieStr): array
+    {
+        if ($cookieStr === '') { return []; }
+        $parts = array_filter(array_map('trim', explode(';', $cookieStr)));
+        $cookies = [];
+        foreach ($parts as $p) {
+            $kv = explode('=', $p, 2);
+            if (count($kv) === 2) {
+                $cookies[] = [
+                    'name' => trim($kv[0]),
+                    'value' => trim($kv[1]),
+                    'domain' => '.facebook.com'
+                ];
+            }
+        }
+        return $cookies;
+    }
+
+    private function ensureCookie(array &$cookies, string $name, string $value): void
+    {
+        foreach ($cookies as $c) { if (($c['name'] ?? '') === $name) { return; } }
+        $cookies[] = ['name' => $name, 'value' => $value, 'domain' => '.facebook.com'];
     }
 }
