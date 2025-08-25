@@ -238,59 +238,402 @@ class FacebookAdsService
     }
 
     /**
-     * Lấy số reactions, comments, shares của một post.
-     * Cần Page Access Token hoặc quyền phù hợp (pages_read_engagement hoặc Page Public Content Access).
-     * Sử dụng endpoint mới thay vì statuses (deprecated)
+     * Lấy engagement data (likes, shares, comments) từ Ad Insights API
+     * Sử dụng quyền admin BM thay vì Page API
      */
-    public function getPostEngagementCounts(string $postId): array
+    public function getAdEngagementData(string $adId): array
     {
-        // Reactions count - sử dụng endpoint reactions
-        $reactionsUrl = "https://graph.facebook.com/{$this->apiVersion}/{$postId}/reactions";
-        $reactionsResp = Http::timeout(60)
-            ->retry(1, 1000)
-            ->get($reactionsUrl, [
+        try {
+            // 1. Lấy thông tin ad để biết ngày tạo
+            $adInfo = $this->getAdInfo($adId);
+            
+            // Xử lý format ngày từ Facebook API
+            $sinceDate = date('Y-m-d', strtotime('-1 year')); // Mặc định 1 năm trước
+            
+            if (isset($adInfo['created_time'])) {
+                $createdTime = $adInfo['created_time'];
+                if (is_string($createdTime)) {
+                    // Facebook trả về ISO 8601 format, chuyển về Y-m-d
+                    $sinceDate = date('Y-m-d', strtotime($createdTime));
+                }
+            }
+            
+            $url = "https://graph.facebook.com/{$this->apiVersion}/{$adId}/insights";
+            
+            $params = [
                 'access_token' => $this->accessToken,
-                'summary' => 'true',
-                'limit' => 0,
+                'fields' => 'actions,action_values,date_start,date_stop',
+                'action_breakdowns' => 'action_type,action_reaction',
+                'time_range' => json_encode([
+                    'since' => $sinceDate,
+                    'until' => date('Y-m-d')
+                ])
+            ];
+
+            $result = $this->makeRequest($url, $params);
+            
+            if (isset($result['error'])) {
+                Log::warning("Không thể lấy engagement data từ Ad Insights API", [
+                    'ad_id' => $adId,
+                    'error' => $result['error']
+                ]);
+                return [
+                    'likes' => 0,
+                    'shares' => 0,
+                    'comments' => 0,
+                    'reactions' => 0,
+                    'error' => $result['error']
+                ];
+            }
+
+            $likes = 0;
+            $shares = 0;
+            $comments = 0;
+            $reactions = 0;
+
+            // Parse engagement data từ actions
+            if (isset($result['data'][0]['actions'])) {
+                foreach ($result['data'][0]['actions'] as $action) {
+                    $actionType = $action['action_type'] ?? '';
+                    $value = (int) ($action['value'] ?? 0);
+
+                    switch ($actionType) {
+                        case 'like':
+                        case 'post_reaction':
+                            $likes += $value;
+                            $reactions += $value;
+                            break;
+                        case 'share':
+                        case 'post_share':
+                            $shares += $value;
+                            break;
+                        case 'comment':
+                        case 'post_comment':
+                            $comments += $value;
+                            break;
+                        case 'reaction':
+                            $reactions += $value;
+                            break;
+                        case 'page_engagement':
+                            // page_engagement là tổng engagement, KHÔNG cộng vào reactions
+                            // Chỉ dùng để tham khảo, không tính vào metrics cụ thể
+                            break;
+                        case 'post_engagement':
+                            // post_engagement là tổng engagement, KHÔNG cộng vào reactions
+                            // Chỉ dùng để tham khảo, không tính vào metrics cụ thể
+                            break;
+                    }
+                }
+            }
+
+            // Nếu không có data từ actions, thử lấy từ action_breakdowns
+            if ($likes === 0 && $shares === 0 && $comments === 0) {
+                $breakdownResult = $this->getAdEngagementWithBreakdowns($adId);
+                if (!isset($breakdownResult['error'])) {
+                    $likes = $breakdownResult['likes'];
+                    $shares = $breakdownResult['shares'];
+                    $comments = $breakdownResult['comments'];
+                    $reactions = $breakdownResult['reactions'];
+                }
+            }
+
+            // Thử lấy shares từ Post API nếu có thể
+            if ($shares === 0) {
+                $shares = $this->getPostSharesFromAd($adId);
+            }
+
+            Log::info("Đã lấy engagement data từ Ad Insights API", [
+                'ad_id' => $adId,
+                'since_date' => $sinceDate,
+                'likes' => $likes,
+                'shares' => $shares,
+                'comments' => $comments,
+                'reactions' => $reactions
             ]);
 
-        // Comments count - sử dụng endpoint comments
-        $commentsUrl = "https://graph.facebook.com/{$this->apiVersion}/{$postId}/comments";
-        $commentsResp = Http::timeout(60)
-            ->retry(1, 1000)
-            ->get($commentsUrl, [
-                'access_token' => $this->accessToken,
-                'summary' => 'true',
-                'filter' => 'toplevel',
-                'limit' => 0,
-            ]);
+            return [
+                'likes' => $likes,
+                'shares' => $shares,
+                'comments' => $comments,
+                'reactions' => $reactions,
+                'raw_data' => $result
+            ];
 
-        // Shares count - lấy qua field shares.summary
-        $sharesUrl = "https://graph.facebook.com/{$this->apiVersion}/{$postId}";
-        $sharesResp = Http::timeout(60)
-            ->retry(1, 1000)
-            ->get($sharesUrl, [
-                'access_token' => $this->accessToken,
-                'fields' => 'shares',
+        } catch (\Exception $e) {
+            Log::error("Lỗi khi lấy engagement data từ Ad Insights API", [
+                'ad_id' => $adId,
+                'error' => $e->getMessage()
             ]);
+            
+            return [
+                'likes' => 0,
+                'shares' => 0,
+                'comments' => 0,
+                'reactions' => 0,
+                'error' => $e->getMessage()
+            ];
+        }
+    }
 
-        $reactions = $reactionsResp->successful() ? ($reactionsResp->json()['summary']['total_count'] ?? 0) : 0;
-        $comments = $commentsResp->successful() ? ($commentsResp->json()['summary']['total_count'] ?? 0) : 0;
+    /**
+     * Lấy thông tin cơ bản của ad để biết ngày tạo
+     */
+    private function getAdInfo(string $adId): array
+    {
+        try {
+            $url = "https://graph.facebook.com/{$this->apiVersion}/{$adId}";
+            $params = [
+                'access_token' => $this->accessToken,
+                'fields' => 'created_time,updated_time,status'
+            ];
+
+            $result = $this->makeRequest($url, $params);
+            
+            if (isset($result['error'])) {
+                return ['created_time' => date('Y-m-d', strtotime('-1 year'))];
+            }
+
+            return $result;
+        } catch (\Exception $e) {
+            return ['created_time' => date('Y-m-d', strtotime('-1 year'))];
+        }
+    }
+
+    /**
+     * Thử lấy shares từ Post API nếu có thể
+     */
+    private function getPostSharesFromAd(string $adId): int
+    {
+        try {
+            // Lấy creative info để tìm post_id
+            $url = "https://graph.facebook.com/{$this->apiVersion}/{$adId}";
+            $params = [
+                'access_token' => $this->accessToken,
+                'fields' => 'creative{object_story_id,effective_object_story_id}'
+            ];
+
+            $result = $this->makeRequest($url, $params);
+            
+            if (isset($result['error']) || !isset($result['creative'])) {
+                return 0;
+            }
+
+            $creative = $result['creative'];
+            $storyId = $creative['object_story_id'] ?? $creative['effective_object_story_id'] ?? null;
+            
+            if (!$storyId) {
+                return 0;
+            }
+
+            // Tách post_id từ story_id
+            $parts = explode('_', $storyId);
+            if (count($parts) < 2) {
+                return 0;
+            }
+
+            $postId = $parts[1];
+            
+            // Thử lấy shares từ post (có thể cần page access token)
+            $postUrl = "https://graph.facebook.com/{$this->apiVersion}/{$postId}";
+            $postParams = [
+                'access_token' => $this->accessToken,
+                'fields' => 'shares'
+            ];
+
+            $postResult = $this->makeRequest($postUrl, $postParams);
+            
+            if (isset($postResult['error'])) {
+                return 0;
+            }
+
+            return isset($postResult['shares']['count']) ? (int) $postResult['shares']['count'] : 0;
+
+        } catch (\Exception $e) {
+            return 0;
+        }
+    }
+
+    /**
+     * Lấy engagement data với breakdowns chi tiết
+     */
+    public function getAdEngagementWithBreakdowns(string $adId): array
+    {
+        try {
+            $url = "https://graph.facebook.com/{$this->apiVersion}/{$adId}/insights";
+            
+            $params = [
+                'access_token' => $this->accessToken,
+                'fields' => 'actions,action_values',
+                'action_breakdowns' => 'action_type,action_reaction,action_device',
+                'breakdowns' => 'publisher_platform,platform_position',
+                'time_range' => json_encode([
+                    'since' => date('Y-m-d', strtotime('-1 year')),
+                    'until' => date('Y-m-d')
+                ])
+            ];
+
+            $result = $this->makeRequest($url, $params);
+            
+            if (isset($result['error'])) {
+                return ['error' => $result['error']];
+            }
+
+            $likes = 0;
+            $shares = 0;
+            $comments = 0;
+            $reactions = 0;
+
+            // Parse từ actions breakdowns
+            if (isset($result['data'])) {
+                foreach ($result['data'] as $insight) {
+                    if (isset($insight['actions'])) {
+                        foreach ($insight['actions'] as $action) {
+                            $actionType = $action['action_type'] ?? '';
+                            $value = (int) ($action['value'] ?? 0);
+
+                            switch ($actionType) {
+                                case 'like':
+                                case 'post_reaction':
+                                    $likes += $value;
+                                    $reactions += $value;
+                                    break;
+                                case 'share':
+                                case 'post_share':
+                                    $shares += $value;
+                                    break;
+                                case 'comment':
+                                case 'post_comment':
+                                    $comments += $value;
+                                    break;
+                                case 'reaction':
+                                    $reactions += $value;
+                                    break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            return [
+                'likes' => $likes,
+                'shares' => $shares,
+                'comments' => $comments,
+                'reactions' => $reactions,
+                'breakdowns' => $result['data'] ?? []
+            ];
+
+        } catch (\Exception $e) {
+            Log::error("Lỗi khi lấy engagement data với breakdowns", [
+                'ad_id' => $adId,
+                'error' => $e->getMessage()
+            ]);
+            
+            return ['error' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Lấy engagement data cho nhiều ads cùng lúc
+     */
+    public function getBatchAdEngagementData(array $adIds): array
+    {
+        $results = [];
+        $chunks = array_chunk($adIds, 5); // Process 5 ads at a time
+        
+        foreach ($chunks as $chunk) {
+            $promises = [];
+            
+            foreach ($chunk as $adId) {
+                $url = "https://graph.facebook.com/{$this->apiVersion}/{$adId}/insights";
+                $params = [
+                    'access_token' => $this->accessToken,
+                    'fields' => 'actions,action_values',
+                    'action_breakdowns' => 'action_type',
+                    'time_range' => json_encode([
+                        'since' => date('Y-m-d', strtotime('-1 year')),
+                        'until' => date('Y-m-d')
+                    ])
+                ];
+                
+                $promises[$adId] = Http::async()->get($url, $params);
+            }
+            
+            // Wait for all requests to complete
+            foreach ($promises as $adId => $promise) {
+                try {
+                    $response = $promise->wait();
+                    
+                    if ($response->successful()) {
+                        $data = $response->json();
+                        $results[$adId] = $this->parseEngagementFromActions($data);
+                    } else {
+                        $results[$adId] = [
+                            'likes' => 0,
+                            'shares' => 0,
+                            'comments' => 0,
+                            'reactions' => 0,
+                            'error' => $response->json()
+                        ];
+                    }
+                } catch (\Exception $e) {
+                    $results[$adId] = [
+                        'likes' => 0,
+                        'shares' => 0,
+                        'comments' => 0,
+                        'reactions' => 0,
+                        'error' => $e->getMessage()
+                    ];
+                }
+            }
+            
+            // Rate limiting
+            usleep(500000); // 0.5 seconds
+        }
+        
+        return $results;
+    }
+
+    /**
+     * Parse engagement data từ actions array
+     */
+    private function parseEngagementFromActions(array $data): array
+    {
+        $likes = 0;
         $shares = 0;
-        if ($sharesResp->successful()) {
-            $sharesData = $sharesResp->json();
-            $shares = isset($sharesData['shares']['count']) ? (int) $sharesData['shares']['count'] : 0;
+        $comments = 0;
+        $reactions = 0;
+
+        if (isset($data['data'][0]['actions'])) {
+            foreach ($data['data'][0]['actions'] as $action) {
+                $actionType = $action['action_type'] ?? '';
+                $value = (int) ($action['value'] ?? 0);
+
+                switch ($actionType) {
+                    case 'like':
+                    case 'post_reaction':
+                        $likes += $value;
+                        $reactions += $value;
+                        break;
+                    case 'share':
+                    case 'post_share':
+                        $shares += $value;
+                        break;
+                    case 'comment':
+                    case 'post_comment':
+                        $comments += $value;
+                        break;
+                    case 'reaction':
+                        $reactions += $value;
+                        break;
+                }
+            }
         }
 
         return [
-            'reactions' => (int) $reactions,
-            'comments' => (int) $comments,
-            'shares' => (int) $shares,
-            'raw' => [
-                'reactions' => $reactionsResp->json(),
-                'comments' => $commentsResp->json(),
-                'shares' => $sharesResp->json(),
-            ],
+            'likes' => $likes,
+            'shares' => $shares,
+            'comments' => $comments,
+            'reactions' => $reactions
         ];
     }
 
@@ -1229,31 +1572,88 @@ class FacebookAdsService
     }
 
     /**
-     * Lấy Ad Insights với tất cả breakdowns cần thiết cho video metrics
+     * Lấy tất cả insights đầy đủ cho một ad
      */
     public function getCompleteAdInsights(string $adId): array
     {
         $results = [];
         
-        // 1. Lấy insights cơ bản (không breakdown)
-        $results['basic'] = $this->getInsightsForAd($adId);
+        // 1. Lấy basic insights với video metrics
+        $results['basic_insights'] = $this->getInsightsWithActionBreakdowns($adId, ['action_type']);
         
-        // 2. Lấy insights với các breakdowns quan trọng
-        $breakdownGroups = [
+        // 2. Lấy insights với các breakdowns chính (tránh combinations không hợp lệ)
+        $mainBreakdowns = [
             'demographics' => ['age', 'gender'],
-            'geographic' => ['country'],
-            'platform' => ['publisher_platform', 'platform_position'],
-            'device' => ['device_platform', 'impression_device'],
-            'action_type' => []  // Sử dụng action_breakdowns
+            'geographic' => ['country', 'region'],
+            'platform' => ['publisher_platform', 'device_platform', 'impression_device']
+            // Loại bỏ platform_position vì có conflict với action_type
         ];
         
-        foreach ($breakdownGroups as $group => $breakdowns) {
-            if ($group === 'action_type') {
-                $results[$group] = $this->getInsightsWithActionBreakdowns($adId, ['action_type']);
-            } else {
-                $results[$group] = $this->getInsightsForAdWithBreakdowns($adId, $breakdowns);
+        foreach ($mainBreakdowns as $category => $breakdowns) {
+            foreach ($breakdowns as $breakdown) {
+                try {
+                    $results["breakdown_{$breakdown}"] = $this->getInsightsForAdWithBreakdowns($adId, [$breakdown]);
+                } catch (\Exception $e) {
+                    Log::warning("Không thể lấy breakdown {$breakdown}", [
+                        'ad_id' => $adId,
+                        'error' => $e->getMessage()
+                    ]);
+                    $results["breakdown_{$breakdown}"] = ['error' => $e->getMessage()];
+                }
             }
         }
+        
+        // 3. Lấy action breakdowns chi tiết (mỗi cái riêng biệt để tránh conflict)
+        $actionBreakdowns = [
+            'action_device',
+            'action_destination', 
+            'action_target_id',
+            'action_reaction',
+            'action_video_sound', // Video sound breakdown
+            'action_video_type',  // Video type breakdown
+            'action_carousel_card_id',
+            'action_carousel_card_name',
+            'action_canvas_component_name'
+        ];
+        
+        foreach ($actionBreakdowns as $breakdown) {
+            try {
+                $results["action_breakdown_{$breakdown}"] = $this->getInsightsWithActionBreakdowns($adId, [$breakdown]);
+            } catch (\Exception $e) {
+                Log::warning("Không thể lấy action breakdown {$breakdown}", [
+                    'ad_id' => $adId,
+                    'error' => $e->getMessage()
+                ]);
+                $results["action_breakdown_{$breakdown}"] = ['error' => $e->getMessage()];
+            }
+        }
+        
+        // 4. Lấy asset breakdowns (video_asset, image_asset, etc.)
+        $assetBreakdowns = [
+            'video_asset',      // Video asset breakdown
+            'image_asset',
+            'body_asset',
+            'title_asset',
+            'description_asset',
+            'call_to_action_asset',
+            'link_url_asset',
+            'ad_format_asset'
+        ];
+        
+        foreach ($assetBreakdowns as $breakdown) {
+            try {
+                $results["asset_breakdown_{$breakdown}"] = $this->getInsightsForAdWithBreakdowns($adId, [$breakdown]);
+            } catch (\Exception $e) {
+                Log::warning("Không thể lấy asset breakdown {$breakdown}", [
+                    'ad_id' => $adId,
+                    'error' => $e->getMessage()
+                ]);
+                $results["asset_breakdown_{$breakdown}"] = ['error' => $e->getMessage()];
+            }
+        }
+        
+        // 5. Lấy engagement data với breakdowns chi tiết
+        $results['engagement_breakdowns'] = $this->getAdEngagementWithBreakdowns($adId);
         
         return $results;
     }
@@ -1268,9 +1668,11 @@ class FacebookAdsService
         $fields = [
             'spend', 'reach', 'impressions', 'clicks', 'ctr', 'cpc', 'cpm', 'frequency',
             'unique_clicks', 'actions', 'action_values', 'ad_name', 'ad_id',
+            // Chỉ sử dụng các video metrics fields hợp lệ theo Facebook API documentation
             'video_30_sec_watched_actions', 'video_avg_time_watched_actions',
             'video_p25_watched_actions', 'video_p50_watched_actions', 
-            'video_p75_watched_actions', 'video_p95_watched_actions', 'video_p100_watched_actions'
+            'video_p75_watched_actions', 'video_p95_watched_actions', 'video_p100_watched_actions',
+            'video_play_actions' // Field mới phát hiện từ test
         ];
         
         $params = [
@@ -1278,7 +1680,7 @@ class FacebookAdsService
             'fields' => implode(',', $fields),
             'action_breakdowns' => implode(',', $actionBreakdowns),
             'time_range' => json_encode([
-                'since' => date('Y-m-d', strtotime('-7 days')),
+                'since' => date('Y-m-d', strtotime('-1 year')),
                 'until' => date('Y-m-d')
             ])
         ];
@@ -1292,6 +1694,14 @@ class FacebookAdsService
         ]);
 
         return $result;
+    }
+
+    /**
+     * Lấy access token
+     */
+    public function getAccessToken(): string
+    {
+        return $this->accessToken;
     }
 
     /**
@@ -1355,5 +1765,173 @@ class FacebookAdsService
                 'video_asset' => 'Video asset'
             ]
         ];
+    }
+
+    /**
+     * Lấy số reactions, comments, shares của một post.
+     * Cần Page Access Token hoặc quyền phù hợp (pages_read_engagement hoặc Page Public Content Access).
+     * Sử dụng endpoint mới thay vì statuses (deprecated)
+     * 
+     * @deprecated Sử dụng getAdEngagementData() thay thế vì method này yêu cầu quyền admin page
+     */
+    public function getPostEngagementCounts(string $postId): array
+    {
+        // Ưu tiên token có quyền Page (pages_read_engagement / Page Public Content Access)
+        $pageToken = config('services.facebook.page_token') ?: $this->accessToken;
+
+        // Gọi 1 lần lấy đủ shares, comments.summary, reactions.summary
+        $url = "https://graph.facebook.com/{$this->apiVersion}/{$postId}";
+        $resp = Http::timeout(60)
+            ->retry(1, 1000)
+            ->get($url, [
+                'access_token' => $pageToken,
+                'fields' => 'shares,comments.limit(0).summary(true),reactions.limit(0).summary(true)'
+            ]);
+
+        if (!$resp->successful()) {
+            Log::warning('Post API request failed', [
+                'post_id' => $postId,
+                'status' => $resp->status(),
+                'response' => $resp->json(),
+            ]);
+            return [
+                'reactions' => 0,
+                'comments' => 0,
+                'shares' => 0,
+                'error' => $resp->json(),
+            ];
+        }
+
+        $data = $resp->json();
+
+        $reactions = (int) ($data['reactions']['summary']['total_count'] ?? 0);
+        $comments = (int) ($data['comments']['summary']['total_count'] ?? 0);
+        $shares = (int) ($data['shares']['count'] ?? 0);
+
+        return [
+            'reactions' => $reactions,
+            'comments' => $comments,
+            'shares' => $shares,
+            'raw' => $data,
+        ];
+    }
+
+    /**
+     * Crawl số liệu engagement trực tiếp từ giao diện (UI) công khai của Facebook.
+     * Ưu tiên dùng mbasic.facebook.com (ít JS), fallback sang m.facebook.com nếu cần.
+     * Lưu ý: chỉ hoạt động với bài viết công khai; kết quả phụ thuộc ngôn ngữ hiển thị.
+     */
+    public function getPostEngagementCountsViaUI(string $postUrl): array
+    {
+        try {
+            $normalized = $this->normalizeFacebookPostUrl($postUrl);
+            $variants = [
+                $normalized['mbasic'],
+                $normalized['mbasic'] . (str_contains($normalized['mbasic'], '?') ? '&' : '?') . '_rdr',
+                $normalized['mobile'],
+                $normalized['www'],
+            ];
+
+            $html = '';
+            $fetchedFrom = '';
+            $httpStatus = 0;
+            foreach ($variants as $v) {
+                $meta = $this->fetchHtmlMeta($v);
+                $html = $meta['body'] ?? '';
+                $httpStatus = (int)($meta['status'] ?? 0);
+                $fetchedFrom = $meta['url'] ?? $v;
+                if ($html !== '') { break; }
+            }
+
+            if ($html === '') {
+                return ['reactions' => 0, 'comments' => 0, 'shares' => 0, 'error' => 'empty_html'];
+            }
+
+            // Parse Vietnamese và một số mẫu chung
+            $likes = $this->matchFirstInt($html, '/>([0-9][0-9\.,]*)\s*(?:lượt thích|thích)\b/i');
+            if ($likes === 0) {
+                // Một số layout hiển thị số ngay sau icon
+                $likes = $this->matchFirstInt($html, '/aria-label="[^\"]*Thích[^\"]*"[^>]*>.*?<span[^>]*>\s*([0-9][0-9\.,]*)\s*<\/span>/is');
+            }
+            // Comments
+            $comments = $this->matchFirstInt($html, '/([0-9][0-9\.,]*)\s*bình luận\b/i');
+            // Shares
+            $shares = $this->matchFirstInt($html, '/([0-9][0-9\.,]*)\s*lượt chia sẻ\b/i');
+
+            // Fallback các ngôn ngữ khác (English)
+            if ($comments === 0) {
+                $comments = $this->matchFirstInt($html, '/([0-9][0-9\.,]*)\s*comments\b/i');
+            }
+            if ($shares === 0) {
+                $shares = $this->matchFirstInt($html, '/([0-9][0-9\.,]*)\s*shares\b/i');
+            }
+            if ($likes === 0) {
+                $likes = $this->matchFirstInt($html, '/([0-9][0-9\.,]*)\s*likes\b/i');
+            }
+
+            return [
+                'reactions' => $likes,
+                'comments' => $comments,
+                'shares' => $shares,
+                'raw_html_len' => strlen($html),
+                'source_url' => $fetchedFrom,
+                'http_status' => $httpStatus,
+            ];
+        } catch (\Throwable $e) {
+            Log::warning('UI crawl failed', [
+                'url' => $postUrl,
+                'error' => $e->getMessage()
+            ]);
+            return ['reactions' => 0, 'comments' => 0, 'shares' => 0, 'error' => $e->getMessage()];
+        }
+    }
+
+    private function normalizeFacebookPostUrl(string $url): array
+    {
+        $url = trim($url);
+        // Thay host sang mbasic/m/www và giữ nguyên path+query
+        $parsed = parse_url($url);
+        $path = ($parsed['path'] ?? '/') . (isset($parsed['query']) ? ('?' . $parsed['query']) : '');
+        $mbasic = 'https://mbasic.facebook.com' . $path;
+        $mobile = 'https://m.facebook.com' . $path;
+        $www = 'https://www.facebook.com' . $path;
+        return ['mbasic' => $mbasic, 'mobile' => $mobile, 'www' => $www];
+    }
+
+    private function fetchHtmlMeta(string $url): array
+    {
+        try {
+            $cookie = (string) (config('services.facebook.crawl_cookie') ?? 'locale=vi_VN; m_pixel_ratio=2.0; wd=1366x768');
+            $resp = Http::withHeaders([
+                    'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
+                    'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                    'Accept-Language' => 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
+                    'Referer' => 'https://mbasic.facebook.com/',
+                    'Cache-Control' => 'no-cache',
+                    'Pragma' => 'no-cache',
+                    'Cookie' => $cookie,
+                ])
+                ->withOptions(['allow_redirects' => true])
+                ->timeout(30)
+                ->retry(1, 1000)
+                ->get($url);
+            return [
+                // Trả cả body cả khi không 2xx để có nội dung debug (ví dụ trang chặn/redirect)
+                'body' => (string) $resp->body(),
+                'status' => $resp->status(),
+                'url' => $url,
+            ];
+        } catch (\Throwable $e) {
+            return ['body' => '', 'status' => 0, 'url' => $url];
+        }
+    }
+
+    private function matchFirstInt(string $html, string $regex): int
+    {
+        if (preg_match($regex, $html, $m)) {
+            $num = str_replace(['.', ','], '', $m[1]);
+            return (int) $num;
+        }
+        return 0;
     }
 }

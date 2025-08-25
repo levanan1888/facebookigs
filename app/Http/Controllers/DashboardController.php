@@ -9,8 +9,6 @@ use App\Models\FacebookAdAccount;
 use App\Models\FacebookAdSet;
 use App\Models\FacebookBusiness;
 use App\Models\FacebookCampaign;
-use App\Models\FacebookPage;
-use App\Models\FacebookPost;
 use App\Models\FacebookAdInsight;
 use App\Models\DashboardReport;
 use App\Models\DashboardCache;
@@ -56,8 +54,9 @@ class DashboardController extends Controller
             'campaigns' => FacebookCampaign::count(),
             'adsets' => FacebookAdSet::count(),
             'ads' => FacebookAd::count(),
-            'pages' => FacebookPage::count(),
-            'posts' => FacebookPost::count(),
+            // Đếm từ FacebookAd để không phụ thuộc bảng pages/posts
+            'pages' => FacebookAd::whereNotNull('page_id')->distinct('page_id')->count(),
+            'posts' => FacebookAd::whereNotNull('post_id')->distinct('post_id')->count(),
             'insights' => FacebookAdInsight::count(),
         ];
 

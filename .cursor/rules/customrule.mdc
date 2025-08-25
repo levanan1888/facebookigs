@@ -64,5 +64,17 @@ alwaysApply: true
     "repository_class": "App\\Repositories\\UserRepository",
     "request_class": "App\\Http\\Requests\\StoreUserRequest",
     "resource_class": "App\\Http\\Resources\\UserResource"
+  },
+  "environment": {
+    "os": "Windows",
+    "tools": [
+      " Laragon để chạy PHP 8.2 và Laravel 11",
+      "Windows Command Prompt hoặc PowerShell để chạy lệnh Artisan"
+    ],
+    "configuration": "Cấu hình môi trường qua file .env, đảm bảo tương thích khi triển khai"
+  },
+  "validation": {
+    "rule": "curso",
+    "description": "Sử dụng rule `curso` để validate dữ liệu đầu vào trong các request classes, đảm bảo tuân thủ các quy tắc validate tùy chỉnh được định nghĩa trong dự án, tích hợp chặt chẽ với Laravel's validation system."
   }
 }

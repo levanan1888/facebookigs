@@ -56,21 +56,36 @@ class SyncPostEngagement extends Command
         $this->info("📝 Đang đồng bộ post: {$postId}");
         
         try {
-            $post = FacebookPost::where('id', $postId)->first();
-            
-            if (!$post) {
-                $this->warn("⚠️  Post ID {$postId} không tìm thấy trong database");
-                return Command::FAILURE;
-            }
-            
-            $result = $this->syncPostEngagement($post, $force);
-            
-            if ($result) {
-                $this->info("✅ Đã đồng bộ thành công post: {$postId}");
-                return Command::SUCCESS;
+            // Kiểm tra xem có phải object_story_id không (có dấu _)
+            if (strpos($postId, '_') !== false) {
+                // Đây là object_story_id, sử dụng logic tách
+                $result = $this->syncPostByObjectStoryId($postId);
+                
+                if ($result) {
+                    $this->info("✅ Đã đồng bộ thành công object_story_id: {$postId}");
+                    return Command::SUCCESS;
+                } else {
+                    $this->error("❌ Không thể đồng bộ object_story_id: {$postId}");
+                    return Command::FAILURE;
+                }
             } else {
-                $this->error("❌ Không thể đồng bộ post: {$postId}");
-                return Command::FAILURE;
+                // Đây là post_id thông thường
+                $post = FacebookPost::where('id', $postId)->first();
+                
+                if (!$post) {
+                    $this->warn("⚠️  Post ID {$postId} không tìm thấy trong database");
+                    return Command::FAILURE;
+                }
+                
+                $result = $this->syncPostEngagement($post, $force);
+                
+                if ($result) {
+                    $this->info("✅ Đã đồng bộ thành công post: {$postId}");
+                    return Command::SUCCESS;
+                } else {
+                    $this->error("❌ Không thể đồng bộ post: {$postId}");
+                    return Command::FAILURE;
+                }
             }
             
         } catch (\Exception $e) {
@@ -136,8 +151,39 @@ class SyncPostEngagement extends Command
     private function syncPostEngagement(FacebookPost $post, bool $force = false): bool
     {
         try {
-            // Lấy engagement data từ Facebook API
-            $engagementData = $this->getPostEngagement($post->id);
+            // Lấy object_story_id từ creative của ad
+            $ad = \App\Models\FacebookAd::where('post_id', $post->id)->first();
+            if (!$ad || !$ad->creative) {
+                Log::warning("Không tìm thấy ad hoặc creative cho post {$post->id}");
+                return false;
+            }
+            
+            $creative = $ad->creative->creative_data;
+            $objectStoryId = $creative['object_story_id'] ?? $creative['effective_object_story_id'] ?? null;
+            
+            if (!$objectStoryId) {
+                Log::warning("Không tìm thấy object_story_id cho post {$post->id}");
+                return false;
+            }
+            
+            // Tách post_id từ object_story_id (format: pageId_postId)
+            $parts = explode('_', $objectStoryId);
+            if (count($parts) < 2) {
+                Log::warning("object_story_id không đúng format: {$objectStoryId}");
+                return false;
+            }
+            
+            $pageId = $parts[0];
+            $postIdFromStory = $parts[1];
+            
+            // Kiểm tra post_id có khớp không
+            if ($postIdFromStory !== $post->id) {
+                Log::warning("Post ID không khớp: post->id={$post->id}, postIdFromStory={$postIdFromStory}");
+                return false;
+            }
+            
+            // Lấy engagement data từ Facebook API sử dụng object_story_id đầy đủ
+            $engagementData = $this->getPostEngagement($objectStoryId);
             
             if (!$engagementData) {
                 return false;
@@ -163,52 +209,157 @@ class SyncPostEngagement extends Command
         }
     }
     
-    private function getPostEngagement(string $postId): ?array
+    /**
+     * Sync engagement cho post cụ thể bằng object_story_id
+     */
+    private function syncPostByObjectStoryId(string $objectStoryId): bool
     {
         try {
-            // Lấy reactions count
-            $reactionsUrl = "https://graph.facebook.com/v18.0/{$postId}/reactions";
-            $reactionsResp = \Illuminate\Support\Facades\Http::timeout(60)
-                ->retry(1, 1000)
-                ->get($reactionsUrl, [
-                    'access_token' => config('services.facebook.ads_token'),
-                    'summary' => 'true',
-                    'limit' => 0,
-                ]);
+            // Tách post_id từ object_story_id (format: pageId_postId)
+            $parts = explode('_', $objectStoryId);
+            if (count($parts) < 2) {
+                Log::warning("object_story_id không đúng format: {$objectStoryId}");
+                return false;
+            }
             
-            // Lấy comments count
-            $commentsUrl = "https://graph.facebook.com/v18.0/{$postId}/comments";
-            $commentsResp = \Illuminate\Support\Facades\Http::timeout(60)
-                ->retry(1, 1000)
-                ->get($commentsUrl, [
-                    'access_token' => config('services.facebook.ads_token'),
-                    'summary' => 'true',
-                    'filter' => 'toplevel',
-                    'limit' => 0,
-                ]);
+            $pageId = $parts[0];
+            $postId = $parts[1];
             
-            // Lấy shares count
-            $sharesUrl = "https://graph.facebook.com/v18.0/{$postId}";
-            $sharesResp = \Illuminate\Support\Facades\Http::timeout(60)
-                ->retry(1, 1000)
-                ->get($sharesUrl, [
-                    'access_token' => config('services.facebook.ads_token'),
-                    'fields' => 'shares',
-                ]);
+            // Tìm post trong database bằng post_id đã tách
+            $post = FacebookPost::where('id', $postId)->first();
+            if (!$post) {
+                Log::warning("Không tìm thấy post với ID: {$postId} (từ object_story_id: {$objectStoryId})");
+                return false;
+            }
             
-            $reactions = $reactionsResp->successful() ? ($reactionsResp->json()['summary']['total_count'] ?? 0) : 0;
-            $comments = $commentsResp->successful() ? ($commentsResp->json()['summary']['total_count'] ?? 0) : 0;
-            $shares = $sharesResp->successful() ? ($sharesResp->json()['shares']['count'] ?? 0) : 0;
+            // Lấy engagement data từ Facebook API sử dụng object_story_id đầy đủ
+            $engagementData = $this->getPostEngagement($objectStoryId);
             
-            return [
-                'likes' => $reactions,
-                'shares' => $shares,
-                'comments' => $comments,
-                'reactions' => $reactions,
-            ];
+            if (!$engagementData) {
+                return false;
+            }
+            
+            // Cập nhật post với engagement data
+            $post->update([
+                'likes_count' => $engagementData['likes'] ?? 0,
+                'shares_count' => $engagementData['shares'] ?? 0,
+                'comments_count' => $engagementData['comments'] ?? 0,
+                'reactions_count' => $engagementData['reactions'] ?? 0,
+                'engagement_updated_at' => now(),
+            ]);
+            
+            // Cập nhật post insights nếu có
+            $this->updatePostInsights($post, $engagementData);
+            
+            Log::info("Đã sync engagement thành công cho post {$postId} với object_story_id {$objectStoryId}");
+            return true;
             
         } catch (\Exception $e) {
-            Log::error("Lỗi khi lấy engagement data cho post {$postId}: " . $e->getMessage());
+            Log::error("Lỗi khi sync engagement cho object_story_id {$objectStoryId}: " . $e->getMessage());
+            return false;
+        }
+    }
+    
+    private function getPostEngagement(string $objectStoryId): ?array
+    {
+        try {
+            $this->info("🔍 Đang lấy engagement data cho object_story_id: {$objectStoryId}");
+            
+            // Tách post_id từ object_story_id
+            $parts = explode('_', $objectStoryId);
+            if (count($parts) < 2) {
+                Log::warning("object_story_id không đúng format: {$objectStoryId}");
+                return null;
+            }
+            
+            $pageId = $parts[0];
+            $postId = $parts[1];
+            
+            // Tìm ad có post_id này để lấy ad_id
+            $ad = \App\Models\FacebookAd::where('post_id', $postId)->first();
+            if (!$ad) {
+                Log::warning("Không tìm thấy ad cho post_id: {$postId}");
+                return null;
+            }
+            
+            // Sử dụng Ad Insights API để lấy engagement data từ quyền admin BM
+            // Đây là cách chính xác và được Facebook khuyến nghị
+            $engagementUrl = "https://graph.facebook.com/v23.0/{$ad->id}/insights";
+            $engagementResp = \Illuminate\Support\Facades\Http::timeout(60)
+                ->retry(1, 1000)
+                ->get($engagementUrl, [
+                    'access_token' => config('services.facebook.ads_token'),
+                    'fields' => 'actions,action_values',
+                    'action_breakdowns' => 'action_type',
+                    'time_range' => json_encode([
+                        'since' => date('Y-m-d', strtotime('-2 years')),
+                        'until' => date('Y-m-d')
+                    ])
+                ]);
+            
+            // Log response để debug
+            Log::info("Ad Insights API response", [
+                'object_story_id' => $objectStoryId,
+                'post_id' => $postId,
+                'ad_id' => $ad->id,
+                'status' => $engagementResp->status(),
+                'body' => $engagementResp->json(),
+            ]);
+            
+            if (!$engagementResp->successful()) {
+                Log::warning("Không thể lấy engagement data từ Ad Insights API", [
+                    'ad_id' => $ad->id,
+                    'status' => $engagementResp->status(),
+                    'response' => $engagementResp->json()
+                ]);
+                return null;
+            }
+            
+            $engagementData = $engagementResp->json();
+            
+            // Parse engagement data từ actions
+            $likes = 0;
+            $shares = 0;
+            $comments = 0;
+            
+            if (isset($engagementData['data'][0]['actions'])) {
+                foreach ($engagementData['data'][0]['actions'] as $action) {
+                    switch ($action['action_type']) {
+                        case 'like':
+                        case 'reaction':
+                        case 'post_reaction':
+                            $likes += (int) ($action['value'] ?? 0);
+                            break;
+                        case 'share':
+                        case 'post_share':
+                            $shares += (int) ($action['value'] ?? 0);
+                            break;
+                        case 'comment':
+                        case 'post_comment':
+                            $comments += (int) ($action['value'] ?? 0);
+                            break;
+                    }
+                }
+            }
+            
+            $result = [
+                'likes' => $likes,
+                'shares' => $shares,
+                'comments' => $comments,
+                'reactions' => $likes, // reactions = likes
+            ];
+            
+            Log::info("Đã lấy được engagement data từ Ad Insights", [
+                'object_story_id' => $objectStoryId,
+                'post_id' => $postId,
+                'ad_id' => $ad->id,
+                'data' => $result
+            ]);
+            
+            return $result;
+            
+        } catch (\Exception $e) {
+            Log::error("Lỗi khi lấy engagement data cho object_story_id {$objectStoryId}: " . $e->getMessage());
             return null;
         }
     }

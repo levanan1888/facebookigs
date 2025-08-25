@@ -17,12 +17,14 @@ class FacebookAdInsight extends Model
         'purchase_roas', 'outbound_clicks', 'unique_outbound_clicks',
         'inline_link_clicks', 'unique_inline_link_clicks', 'website_clicks',
         'actions', 'action_values', 'cost_per_action_type', 'cost_per_unique_action_type', 'breakdowns',
-        // Video metrics fields - đầy đủ theo docs Facebook
-        'video_plays', 'video_plays_at_25_percent', 'video_plays_at_50_percent', 'video_plays_at_75_percent', 'video_plays_at_100_percent',
-        'video_avg_time_watched_actions', 'video_p25_watched_actions', 'video_p50_watched_actions', 'video_p75_watched_actions', 'video_p95_watched_actions', 'video_p100_watched_actions',
-        'thruplays', 'video_avg_time_watched', 'video_view_time', 'video_30_sec_watched',
-        'post_video_views', 'post_video_views_unique', 'post_video_avg_time_watched', 'post_video_complete_views_30s', 'post_video_views_10s',
-        'post_video_retention_graph', 'post_video_views_paid', 'post_video_views_organic'
+        // Bổ sung mapping post/page để dựng link
+        'post_id', 'page_id',
+        // Video metrics fields - sau khi cleanup trùng lặp
+        'video_views', 'video_view_time', 'video_avg_time_watched',
+        'video_plays', 'video_plays_at_25', 'video_plays_at_50', 'video_plays_at_75', 'video_plays_at_100',
+        'video_avg_time_watched_actions', 'video_p25_watched_actions', 'video_p50_watched_actions', 
+        'video_p75_watched_actions', 'video_p95_watched_actions', 'video_p100_watched_actions',
+        'thruplays', 'video_30_sec_watched'
     ];
 
     protected $casts = [

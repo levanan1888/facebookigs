@@ -9,9 +9,7 @@ use App\Models\FacebookAdAccount;
 use App\Models\FacebookCampaign;
 use App\Models\FacebookAdSet;
 use App\Models\FacebookAd;
-use App\Models\FacebookPost;
 use App\Models\FacebookAdInsight;
-use App\Models\FacebookPostInsight;
 use App\Models\FacebookReportSummary;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -291,13 +289,14 @@ class HierarchyController extends Controller
             $pageId = $request->get('pageId');
             $month = $request->get('month'); // YYYY-MM to aggregate monthly KPIs
             
-            $postsQuery = FacebookPost::with(['page', 'insights']);
+            // Bảng posts đã loại bỏ; trả rỗng hoặc chuyển sang đọc từ FacebookAd nếu cần
+            $postsQuery = collect();
             
             if ($pageId) {
                 $postsQuery->where('page_id', $pageId);
             }
             
-            $posts = $postsQuery->orderBy('created_time', 'desc')->get();
+            $posts = collect();
 
             if ($month) {
                 [$y, $m] = explode('-', $month) + [null, null];
@@ -306,9 +305,7 @@ class HierarchyController extends Controller
                     $end = date('Y-m-t', strtotime($start));
                     
                     // Lấy insights từ bảng facebook_post_insights
-                    $insights = FacebookPostInsight::whereIn('post_id', $posts->pluck('id'))
-                        ->whereBetween('date', [$start, $end])
-                        ->get(['post_id', 'likes', 'shares', 'comments', 'impressions', 'reach']);
+                    $insights = collect();
                     
                     $byPost = [];
                     foreach ($insights as $in) {
@@ -324,10 +321,7 @@ class HierarchyController extends Controller
                         $byPost[$postId]['reach'] += (int) ($in->reach ?? 0);
                     }
                     // attach KPI
-                    $posts->transform(function ($p) use ($byPost) {
-                        $p->kpi = $byPost[$p->id] ?? ['likes'=>0,'shares'=>0,'comments'=>0,'impressions'=>0,'reach'=>0];
-                        return $p;
-                    });
+                    // Không còn dữ liệu posts để transform
                 }
             }
 

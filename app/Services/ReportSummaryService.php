@@ -6,7 +6,7 @@ namespace App\Services;
 
 use App\Models\FacebookAd;
 use App\Models\FacebookAdInsight;
-use App\Models\FacebookPostInsight;
+// Bỏ phụ thuộc bảng post insights
 use App\Models\FacebookReportSummary;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -146,7 +146,8 @@ class ReportSummaryService
      */
     private function updatePostSummaries(string $date): int
     {
-        $posts = DB::table('facebook_posts')->get();
+        // Bảng facebook_posts đã loại bỏ
+        $posts = collect();
         $updated = 0;
 
         foreach ($posts as $post) {

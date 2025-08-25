@@ -18,6 +18,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Schema;
 
 class FacebookAdsSyncService
 {
@@ -372,6 +373,15 @@ class FacebookAdsSyncService
         
         foreach ($ads['data'] ?? [] as $ad) {
             try {
+                // Guard: đảm bảo adset tồn tại trước khi insert ad
+                if (!FacebookAdSet::where('id', $adSet->id)->exists()) {
+                    Log::warning('Bỏ qua insert ad vì thiếu adset', [
+                        'ad_id' => $ad['id'] ?? null,
+                        'adset_id' => $adSet->id,
+                    ]);
+                    continue;
+                }
+
                 $this->processAdWithNormalizedStructure($ad, $adSet, $result);
             } catch (\Exception $e) {
                 Log::error("Lỗi khi process ad", [
@@ -410,48 +420,49 @@ class FacebookAdsSyncService
         );
         $result['ads']++;
 
-        // 2. Lưu Creative data vào bảng facebook_creatives
+        // 2. Lưu Creative JSON và meta post/page trực tiếp vào facebook_ads
         if (isset($ad['creative'])) {
-            $this->saveCreativeData($ad['creative'], $facebookAd);
+            try {
+                $creativeData = $ad['creative'];
+                $pageId = $this->extractPageId($facebookAd, $creativeData);
+                $postMeta = $this->extractPostData($ad) ?? [];
+                $facebookAd->update([
+                    'page_id' => $pageId ?: $facebookAd->page_id,
+                    'post_id' => $postMeta['id'] ?? $facebookAd->post_id,
+                    'page_meta' => $pageId ? json_encode($creativeData['object_story_spec']['page_id'] ?? []) : $facebookAd->page_meta,
+                    'post_meta' => !empty($postMeta) ? json_encode($postMeta) : $facebookAd->post_meta,
+                    'creative_json' => json_encode($creativeData),
+                ]);
+            } catch (\Exception $e) {
+                Log::warning('Không thể lưu creative/post/page meta vào facebook_ads', [
+                    'ad_id' => $facebookAd->id,
+                    'error' => $e->getMessage()
+                ]);
+            }
         }
 
-        // 2. Xử lý Post data nếu có (chỉ lưu thông tin cơ bản, không lấy insights do hạn chế quyền)
-        $postData = $this->extractPostData($ad);
-        if ($postData) {
-            $this->processPostData($postData, $facebookAd, $result);
-        }
-
-        // 4. Lấy và lưu Ad Insights đầy đủ với video metrics và breakdowns
+        // Bỏ lưu Page/Post/PostInsights/Creative tables. Gom meta vào facebook_ads và chỉ số vào facebook_ad_insights.
+        // 4. Lấy và lưu Ad Insights đầy đủ với video metrics, breakdowns và engagement data
         $this->processCompleteAdInsights($facebookAd, $result);
     }
 
     /**
      * Xử lý Post data và lưu vào bảng facebook_posts
+     * Lấy data từ creative thay vì gọi API riêng
      */
     private function processPostData(array $postData, FacebookAd $facebookAd, array &$result): void
     {
         try {
-            // Lưu Page trước nếu chưa có
+            // Không còn lưu Page
             $pageId = $this->extractPageId($facebookAd, $postData);
-            if ($pageId) {
-                $page = FacebookPage::firstOrCreate(
-                    ['id' => $pageId],
-                    [
-                        'name' => $postData['from']['name'] ?? null,
-                        'category' => $postData['from']['category'] ?? null,
-                        'verification_status' => $postData['from']['verification_status'] ?? null,
-                    ]
-                );
-                $result['pages']++;
-            }
 
-            // Lưu Post
+            // Lưu Post với data từ creative
             $post = FacebookPost::updateOrCreate(
                 ['id' => $postData['id']],
                 [
                     'page_id' => $pageId,
                     'message' => $postData['message'] ?? null,
-                    'type' => $postData['type'] ?? null,
+                    'type' => $postData['type'] ?? 'post',
                     'status_type' => $postData['status_type'] ?? null,
                     'attachments' => isset($postData['attachments']) ? json_encode($postData['attachments']) : null,
                     'permalink_url' => $postData['permalink_url'] ?? null,
@@ -464,11 +475,60 @@ class FacebookAdsSyncService
             // Cập nhật foreign key trong FacebookAd
             $facebookAd->update(['post_id' => $post->id]);
 
-                } catch (\Exception $e) {
+            // Lấy engagement data (like, share, comment) từ Ad Insights API
+            try {
+                // Tìm ad có post_id này để lấy ad_id
+                $ad = FacebookAd::where('post_id', $post->id)->first();
+                if ($ad) {
+                    $engagementData = $this->api->getAdEngagementData($ad->id);
+                    
+                    if (!isset($engagementData['error'])) {
+                        // Cập nhật post với engagement data
+                        $post->update([
+                            'likes_count' => $engagementData['likes'] ?? 0,
+                            'shares_count' => $engagementData['shares'] ?? 0,
+                            'comments_count' => $engagementData['comments'] ?? 0,
+                            'reactions_count' => $engagementData['reactions'] ?? 0,
+                            'engagement_updated_at' => now(),
+                        ]);
+                        
+                        Log::info("Đã lấy được engagement data từ Ad Insights API", [
+                            'post_id' => $postData['id'],
+                            'ad_id' => $ad->id,
+                            'likes' => $engagementData['likes'] ?? 0,
+                            'shares' => $engagementData['shares'] ?? 0,
+                            'comments' => $engagementData['comments'] ?? 0,
+                            'reactions' => $engagementData['reactions'] ?? 0,
+                        ]);
+                    } else {
+                        Log::warning("Không lấy được engagement data từ Ad Insights API", [
+                            'post_id' => $postData['id'],
+                            'ad_id' => $ad->id,
+                            'error' => $engagementData['error'] ?? 'Unknown error'
+                        ]);
+                    }
+                } else {
+                    Log::warning("Không tìm thấy ad cho post_id: {$postData['id']}");
+                }
+            } catch (\Exception $e) {
+                Log::warning("Lỗi khi lấy engagement data từ Ad Insights API", [
+                    'post_id' => $postData['id'],
+                    'error' => $e->getMessage()
+                ]);
+                // Không throw exception để không ảnh hưởng đến việc lưu post
+            }
+
+            Log::info("Đã lưu post data thành công", [
+                'post_id' => $postData['id'],
+                'page_id' => $pageId,
+                'facebook_post_id' => $post->id
+            ]);
+
+        } catch (\Exception $e) {
             Log::error("Lỗi khi process post data", [
                 'post_id' => $postData['id'] ?? 'unknown',
-                        'error' => $e->getMessage()
-                    ]);
+                'error' => $e->getMessage()
+            ]);
             throw $e;
         }
     }
@@ -543,36 +603,233 @@ class FacebookAdsSyncService
     }
 
     /**
-     * Xử lý Ad Insights đầy đủ với video metrics và breakdowns theo Facebook Marketing API v23.0
+     * Xử lý Complete Ad Insights với tất cả breakdowns
      */
     private function processCompleteAdInsights(FacebookAd $facebookAd, array &$result): void
     {
         try {
-            // Lấy insights đầy đủ với tất cả breakdowns
-            $completeInsights = $this->api->getCompleteAdInsights($facebookAd->id);
+            Log::info("🔄 Đang lấy Complete Ad Insights cho Ad: {$facebookAd->id}");
             
-            // Xử lý insights cơ bản trước để có ad_insight_id
-            if (isset($completeInsights['basic']['data']) && !empty($completeInsights['basic']['data'])) {
-                $this->processBasicAdInsights($completeInsights['basic'], $facebookAd, $result);
-            }
+            $insights = $this->api->getCompleteAdInsights($facebookAd->id);
             
-            // Xử lý breakdowns sau khi đã có ad_insight_id
-            foreach ($completeInsights as $breakdownType => $insightsData) {
-                if ($breakdownType === 'basic') continue;
-                
-                if (isset($insightsData['data']) && !empty($insightsData['data'])) {
-                    $this->processAdInsightsBreakdowns($insightsData, $facebookAd, $breakdownType, $result);
-                }
-            }
-            
-            // Reset ad_insight_id sau khi xử lý xong
-            $this->lastProcessedAdInsightId = null;
-
-        } catch (\Exception $e) {
-            Log::error("Lỗi khi xử lý complete ad insights", [
+            Log::info("📊 Insights data structure", [
                 'ad_id' => $facebookAd->id,
-                'error' => $e->getMessage()
+                'insights_keys' => array_keys($insights),
+                'has_basic_insights' => isset($insights['basic_insights']),
+                'basic_insights_data_count' => isset($insights['basic_insights']['data']) ? count($insights['basic_insights']['data']) : 0
             ]);
+            
+            if (isset($insights['basic_insights']['data']) && !empty($insights['basic_insights']['data'])) {
+                $basicInsight = $insights['basic_insights']['data'][0];
+                
+                Log::info("✅ Có basic insights data", [
+                    'ad_id' => $facebookAd->id,
+                    'insight_keys' => array_keys($basicInsight),
+                    'has_video_metrics' => isset($basicInsight['video_30_sec_watched_actions'])
+                ]);
+                
+                // 1. Xử lý basic insights
+                $this->processBasicAdInsights($insights['basic_insights'], $facebookAd, $result);
+                
+                // 2. Xử lý các breakdowns chính
+                $this->processMainBreakdowns($facebookAd, $insights, $result);
+                
+                // 3. Xử lý action breakdowns
+                $this->processActionBreakdowns($facebookAd, $insights, $result);
+                
+                // 4. Xử lý asset breakdowns
+                $this->processAssetBreakdowns($facebookAd, $insights, $result);
+                
+                // 5. Xử lý engagement breakdowns
+                if (isset($insights['engagement_breakdowns'])) {
+                    $this->processEngagementBreakdowns($facebookAd, $insights['engagement_breakdowns'], $result);
+                }
+                
+                $result['ad_insights']++;
+                Log::info("✅ Đã xử lý Complete Ad Insights cho Ad: {$facebookAd->id}", [
+                    'ad_id' => $facebookAd->id,
+                    'result' => $result
+                ]);
+                
+            } else {
+                Log::warning("⚠️ Không có basic insights data cho Ad: {$facebookAd->id}", [
+                    'ad_id' => $facebookAd->id,
+                    'insights_structure' => $insights
+                ]);
+            }
+            
+        } catch (\Exception $e) {
+            Log::error("❌ Lỗi khi xử lý Complete Ad Insights cho Ad: {$facebookAd->id}");
+            Log::error("Process Complete Ad Insights failed", [
+                'ad_id' => $facebookAd->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+        }
+    }
+    
+    /**
+     * Xử lý engagement breakdowns
+     */
+    private function processEngagementBreakdowns(FacebookAd $facebookAd, array $engagementData, array &$result): void
+    {
+        // Xử lý engagement breakdowns nếu có
+        if (isset($engagementData['data']) && !empty($engagementData['data'])) {
+            foreach ($engagementData['data'] as $engagement) {
+                // Lưu engagement breakdown data
+                // Có thể mở rộng thêm logic xử lý engagement breakdowns
+            }
+        }
+    }
+    
+    /**
+     * Xử lý các breakdowns chính
+     */
+    private function processMainBreakdowns(FacebookAd $facebookAd, array $insights, array &$result): void
+    {
+        $mainBreakdowns = [
+            'age', 'gender', 'country', 'region', 'publisher_platform', 
+            'platform_position', 'device_platform', 'impression_device'
+        ];
+        
+        foreach ($mainBreakdowns as $breakdown) {
+            $key = "breakdown_{$breakdown}";
+            if (isset($insights[$key]) && !isset($insights[$key]['error'])) {
+                $this->saveBreakdownData($facebookAd, $insights[$key], $breakdown, $result);
+            }
+        }
+    }
+    
+    /**
+     * Xử lý action breakdowns
+     */
+    private function processActionBreakdowns(FacebookAd $facebookAd, array $insights, array &$result): void
+    {
+        $actionBreakdowns = [
+            'action_device', 'action_destination', 'action_target_id', 
+            'action_reaction', 'action_video_sound', 'action_video_type',
+            'action_carousel_card_id', 'action_carousel_card_name', 'action_canvas_component_name'
+        ];
+        
+        foreach ($actionBreakdowns as $breakdown) {
+            $key = "action_breakdown_{$breakdown}";
+            if (isset($insights[$key]) && !isset($insights[$key]['error'])) {
+                $this->saveActionBreakdownData($facebookAd, $insights[$key], $breakdown, $result);
+            }
+        }
+    }
+    
+    /**
+     * Xử lý asset breakdowns
+     */
+    private function processAssetBreakdowns(FacebookAd $facebookAd, array $insights, array &$result): void
+    {
+        $assetBreakdowns = [
+            'video_asset', 'image_asset', 'body_asset', 'title_asset',
+            'description_asset', 'call_to_action_asset', 'link_url_asset', 'ad_format_asset'
+        ];
+        
+        foreach ($assetBreakdowns as $breakdown) {
+            $key = "asset_breakdown_{$breakdown}";
+            if (isset($insights[$key]) && !isset($insights[$key]['error'])) {
+                $this->saveAssetBreakdownData($facebookAd, $insights[$key], $breakdown, $result);
+            }
+        }
+    }
+    
+    /**
+     * Lưu breakdown data vào database
+     */
+    private function saveBreakdownData(FacebookAd $facebookAd, array $breakdownData, string $breakdownType, array &$result): void
+    {
+        if (!isset($this->lastProcessedAdInsightId) || !$this->lastProcessedAdInsightId) {
+            Log::warning('Không có ad_insight_id để lưu breakdown', [
+                'ad_id' => $facebookAd->id,
+                'breakdown_type' => $breakdownType,
+            ]);
+            return;
+        }
+
+        if (isset($breakdownData['data']) && !empty($breakdownData['data'])) {
+            foreach ($breakdownData['data'] as $row) {
+                \App\Models\FacebookBreakdown::updateOrCreate(
+                    [
+                        'ad_insight_id' => $this->lastProcessedAdInsightId,
+                        'breakdown_type' => $breakdownType,
+                        'breakdown_value' => is_array($row[$breakdownType] ?? null)
+                            ? (string)($row[$breakdownType]['id'] ?? $row[$breakdownType]['name'] ?? json_encode($row[$breakdownType]))
+                            : (string)($row[$breakdownType] ?? 'unknown'),
+                    ],
+                    [
+                        'metrics' => json_encode($row),
+                    ]
+                );
+            }
+            $result['breakdowns']++;
+        }
+    }
+    
+    /**
+     * Lưu action breakdown data
+     */
+    private function saveActionBreakdownData(FacebookAd $facebookAd, array $breakdownData, string $breakdownType, array &$result): void
+    {
+        if (!isset($this->lastProcessedAdInsightId) || !$this->lastProcessedAdInsightId) {
+            Log::warning('Không có ad_insight_id để lưu action breakdown', [
+                'ad_id' => $facebookAd->id,
+                'breakdown_type' => $breakdownType,
+            ]);
+            return;
+        }
+
+        if (isset($breakdownData['data']) && !empty($breakdownData['data'])) {
+            foreach ($breakdownData['data'] as $row) {
+                \App\Models\FacebookBreakdown::updateOrCreate(
+                    [
+                        'ad_insight_id' => $this->lastProcessedAdInsightId,
+                        'breakdown_type' => $breakdownType,
+                        'breakdown_value' => is_array($row[$breakdownType] ?? null)
+                            ? (string)($row[$breakdownType]['id'] ?? $row[$breakdownType]['name'] ?? json_encode($row[$breakdownType]))
+                            : (string)($row[$breakdownType] ?? 'unknown'),
+                    ],
+                    [
+                        'metrics' => json_encode($row),
+                    ]
+                );
+            }
+            $result['breakdowns']++;
+        }
+    }
+    
+    /**
+     * Lưu asset breakdown data
+     */
+    private function saveAssetBreakdownData(FacebookAd $facebookAd, array $breakdownData, string $breakdownType, array &$result): void
+    {
+        if (!isset($this->lastProcessedAdInsightId) || !$this->lastProcessedAdInsightId) {
+            Log::warning('Không có ad_insight_id để lưu asset breakdown', [
+                'ad_id' => $facebookAd->id,
+                'breakdown_type' => $breakdownType,
+            ]);
+            return;
+        }
+
+        if (isset($breakdownData['data']) && !empty($breakdownData['data'])) {
+            foreach ($breakdownData['data'] as $row) {
+                \App\Models\FacebookBreakdown::updateOrCreate(
+                    [
+                        'ad_insight_id' => $this->lastProcessedAdInsightId,
+                        'breakdown_type' => $breakdownType,
+                        'breakdown_value' => is_array($row[$breakdownType] ?? null)
+                            ? (string)($row[$breakdownType]['id'] ?? $row[$breakdownType]['name'] ?? json_encode($row[$breakdownType]))
+                            : (string)($row[$breakdownType] ?? 'unknown'),
+                    ],
+                    [
+                        'metrics' => json_encode($row),
+                    ]
+                );
+            }
+            $result['breakdowns']++;
         }
     }
 
@@ -587,11 +844,43 @@ class FacebookAdsSyncService
             }
 
             foreach ($adInsights['data'] as $insight) {
-                // Extract video metrics từ actions và video fields
-                $videoMetrics = $this->extractCompleteVideoMetrics($insight);
+                // Parse actions để map về các trường quan trọng
+                $actions = $insight['actions'] ?? [];
+                $actionTotals = [];
+                foreach ($actions as $a) {
+                    $type = $a['action_type'] ?? '';
+                    $val = (int) ($a['value'] ?? 0);
+                    if ($type === '') { continue; }
+                    $actionTotals[$type] = ($actionTotals[$type] ?? 0) + $val;
+                }
                 
                 // Xác định date từ insight
                 $date = $insight['date_start'] ?? $insight['date_stop'] ?? now()->toDateString();
+
+                // Trích xuất page_id, post_id từ creative.object_story_id nếu có
+                $pageIdFromCreative = null;
+                $postIdFromCreative = null;
+                try {
+                    if (isset($facebookAd->creative) && isset($facebookAd->creative->creative_data)) {
+                        $creative = $facebookAd->creative->creative_data;
+                        // creative_data có thể là JSON string -> decode
+                        if (is_string($creative)) {
+                            $decoded = json_decode($creative, true);
+                            if (json_last_error() === JSON_ERROR_NONE) {
+                                $creative = $decoded;
+                            }
+                        }
+                        $objectStoryId = $creative['object_story_id'] ?? ($creative['effective_object_story_id'] ?? null);
+                        if (is_string($objectStoryId) && strpos($objectStoryId, '_') !== false) {
+                            [$pageIdFromCreative, $postIdFromCreative] = explode('_', $objectStoryId, 2);
+                        }
+                    }
+                } catch (\Throwable $e) {
+                    // Bỏ qua nếu không có creative
+                }
+                // Fallback sang trường trên ad nếu có
+                $postIdForSave = $postIdFromCreative ?: ($facebookAd->post_id ?? null);
+                $pageIdForSave = $pageIdFromCreative ?: ($facebookAd->page_id ?? null);
                 
                 $adInsight = FacebookAdInsight::updateOrCreate(
                     [
@@ -612,7 +901,12 @@ class FacebookAdsSyncService
                         'frequency' => (float) ($insight['frequency'] ?? 0),
                         
                         // Conversion metrics
-                        'conversions' => (int) ($insight['conversions'] ?? 0),
+                        'conversions' => (int) ($insight['conversions'] ?? (
+                            ($actionTotals['lead'] ?? 0)
+                            + ($actionTotals['onsite_conversion.lead'] ?? 0)
+                            + ($actionTotals['onsite_web_lead'] ?? 0)
+                            + ($actionTotals['onsite_conversion.lead_grouped'] ?? 0)
+                        )),
                         'conversion_values' => (float) ($insight['conversion_values'] ?? 0),
                         'cost_per_conversion' => (float) ($insight['cost_per_conversion'] ?? 0),
                         'purchase_roas' => (float) ($insight['purchase_roas'] ?? 0),
@@ -620,8 +914,9 @@ class FacebookAdsSyncService
                         // Click metrics
                         'outbound_clicks' => (int) ($insight['outbound_clicks'] ?? 0),
                         'unique_outbound_clicks' => (int) ($insight['unique_outbound_clicks'] ?? 0),
-                        'inline_link_clicks' => (int) ($insight['inline_link_clicks'] ?? 0),
+                        'inline_link_clicks' => (int) ($insight['inline_link_clicks'] ?? ($actionTotals['link_click'] ?? 0)),
                         'unique_inline_link_clicks' => (int) ($insight['unique_inline_link_clicks'] ?? 0),
+                        'website_clicks' => (int) ($insight['website_clicks'] ?? ($actionTotals['link_click'] ?? 0)),
                         
                         // JSON fields - Laravel tự động handle JSON casting
                         'actions' => $insight['actions'] ?? null,
@@ -629,17 +924,11 @@ class FacebookAdsSyncService
                         'cost_per_action_type' => $insight['cost_per_action_type'] ?? null,
                         'cost_per_unique_action_type' => $insight['cost_per_unique_action_type'] ?? null,
                         
-                        // Video metrics từ actions và video fields
-                        'video_views' => $videoMetrics['video_views'],
-                        'video_plays' => $videoMetrics['video_plays'],
-                        'video_avg_time_watched' => $videoMetrics['video_avg_time_watched'],
-                        'video_p25_watched_actions' => $videoMetrics['video_p25_watched_actions'],
-                        'video_p50_watched_actions' => $videoMetrics['video_p50_watched_actions'],
-                        'video_p75_watched_actions' => $videoMetrics['video_p75_watched_actions'],
-                        'video_p95_watched_actions' => $videoMetrics['video_p95_watched_actions'],
-                        'video_p100_watched_actions' => $videoMetrics['video_p100_watched_actions'],
-                        'thruplays' => $videoMetrics['thruplays'],
-                        'video_30_sec_watched' => $videoMetrics['video_30_sec_watched'],
+                        // Video metrics tối giản: chỉ lưu video_views (ưu tiên từ actions nếu có)
+                        'video_views' => (int) ($insight['video_views'] ?? ($actionTotals['video_view'] ?? 0)),
+                        // Lưu mapping post/page nếu schema có
+                        ...(Schema::hasColumn('facebook_ad_insights', 'post_id') && $postIdForSave ? ['post_id' => (string) $postIdForSave] : []),
+                        ...(Schema::hasColumn('facebook_ad_insights', 'page_id') && $pageIdForSave ? ['page_id' => (string) $pageIdForSave] : []),
                     ]
                 );
                 $result['ad_insights']++;
@@ -665,6 +954,10 @@ class FacebookAdsSyncService
         $videoMetrics = [
             'video_views' => 0,
             'video_plays' => 0,
+            'video_plays_at_25' => 0,
+            'video_plays_at_50' => 0,
+            'video_plays_at_75' => 0,
+            'video_plays_at_100' => 0,
             'video_avg_time_watched' => 0.0,
             'video_p25_watched_actions' => 0,
             'video_p50_watched_actions' => 0,
@@ -672,7 +965,28 @@ class FacebookAdsSyncService
             'video_p95_watched_actions' => 0,
             'video_p100_watched_actions' => 0,
             'thruplays' => 0,
+            'video_view_time' => 0,
             'video_30_sec_watched' => 0,
+            // Chỉ giữ lại các fields thực sự có sẵn từ Facebook API
+            'video_play_actions' => 0,
+            // Các fields nâng cao sẽ được set NULL vì không có trong API response
+            'video_watch_at_75_percent_actions' => null,
+            'video_watch_at_100_percent_actions' => null,
+            'video_retention_graph' => null,
+            'video_sound_on_actions' => null,
+            'video_sound_off_actions' => null,
+            'video_quality_actions' => null,
+            'video_engagement_rate' => null,
+            'video_completion_rate' => null,
+            'video_skip_actions' => null,
+            'video_mute_actions' => null,
+            'video_unmute_actions' => null,
+            'video_performance_p25' => null,
+            'video_performance_p50' => null,
+            'video_performance_p75' => null,
+            'video_performance_p95' => null,
+            'video_attributed_views' => null,
+            'video_attributed_view_time' => null,
         ];
         
         // Extract từ video fields trực tiếp
@@ -697,6 +1011,20 @@ class FacebookAdsSyncService
             }
         }
         
+        // Extract từ video plays percentage
+        $videoPlaysFields = [
+            'video_plays_at_25' => 'video_plays_at_25',
+            'video_plays_at_50' => 'video_plays_at_50',
+            'video_plays_at_75' => 'video_plays_at_75',
+            'video_plays_at_100' => 'video_plays_at_100'
+        ];
+        
+        foreach ($videoPlaysFields as $field => $metricKey) {
+            if (isset($insight[$field])) {
+                $videoMetrics[$metricKey] = (int) $insight[$field];
+            }
+        }
+        
         // Extract từ video percentage watched actions
         $percentageFields = [
             'video_p25_watched_actions' => 'video_p25_watched_actions',
@@ -716,18 +1044,54 @@ class FacebookAdsSyncService
             }
         }
         
+        // Extract video_play_actions - field mới phát hiện
+        if (isset($insight['video_play_actions'])) {
+            foreach ($insight['video_play_actions'] as $action) {
+                if ($action['action_type'] === 'video_view') {
+                    $videoMetrics['video_play_actions'] = (int) $action['value'];
+                }
+            }
+        }
+        
         // Extract từ actions array (fallback)
         if (isset($insight['actions'])) {
             foreach ($insight['actions'] as $action) {
                 switch ($action['action_type']) {
                     case 'video_view':
                         $videoMetrics['video_views'] = (int) $action['value'];
+                        $videoMetrics['video_plays'] = (int) $action['value']; // Sử dụng video_view làm video_plays
                         break;
                     case 'video_play':
                         $videoMetrics['video_plays'] = (int) $action['value'];
                         break;
+                    case 'video_p25_watched_actions':
+                        $videoMetrics['video_p25_watched_actions'] = (int) $action['value'];
+                        $videoMetrics['video_plays_at_25'] = (int) $action['value'];
+                        break;
+                    case 'video_p50_watched_actions':
+                        $videoMetrics['video_p50_watched_actions'] = (int) $action['value'];
+                        $videoMetrics['video_plays_at_50'] = (int) $action['value'];
+                        break;
+                    case 'video_p75_watched_actions':
+                        $videoMetrics['video_p75_watched_actions'] = (int) $action['value'];
+                        $videoMetrics['video_plays_at_75'] = (int) $action['value'];
+                        break;
+                    case 'video_p95_watched_actions':
+                        $videoMetrics['video_p95_watched_actions'] = (int) $action['value'];
+                        break;
+                    case 'video_p100_watched_actions':
+                        $videoMetrics['video_p100_watched_actions'] = (int) $action['value'];
+                        $videoMetrics['video_plays_at_100'] = (int) $action['value'];
+                        break;
+                    case 'video_thruplay_watched_actions':
                     case 'thruplay':
                         $videoMetrics['thruplays'] = (int) $action['value'];
+                        break;
+                    case 'video_avg_time_watched_actions':
+                        $videoMetrics['video_avg_time_watched'] = (float) $action['value'];
+                        break;
+                    case 'video_view_time':
+                        $videoMetrics['video_view_time'] = (int) $action['value'];
                         break;
                 }
             }
@@ -787,6 +1151,26 @@ class FacebookAdsSyncService
                         'video_p100_watched_actions' => $videoMetrics['video_p100_watched_actions'],
                         'thruplays' => $videoMetrics['thruplays'],
                         'video_30_sec_watched' => $videoMetrics['video_30_sec_watched'],
+                        // Chỉ lưu các fields thực sự có data từ Facebook API
+                        'video_play_actions' => $videoMetrics['video_play_actions'],
+                        // Các fields nâng cao sẽ NULL vì không có trong API response
+                        'video_watch_at_75_percent_actions' => $videoMetrics['video_watch_at_75_percent_actions'],
+                        'video_watch_at_100_percent_actions' => $videoMetrics['video_watch_at_100_percent_actions'],
+                        'video_retention_graph' => $videoMetrics['video_retention_graph'],
+                        'video_sound_on_actions' => $videoMetrics['video_sound_on_actions'],
+                        'video_sound_off_actions' => $videoMetrics['video_sound_off_actions'],
+                        'video_quality_actions' => $videoMetrics['video_quality_actions'],
+                        'video_engagement_rate' => $videoMetrics['video_engagement_rate'],
+                        'video_completion_rate' => $videoMetrics['video_completion_rate'],
+                        'video_skip_actions' => $videoMetrics['video_skip_actions'],
+                        'video_mute_actions' => $videoMetrics['video_mute_actions'],
+                        'video_unmute_actions' => $videoMetrics['video_unmute_actions'],
+                        'video_performance_p25' => $videoMetrics['video_performance_p25'],
+                        'video_performance_p50' => $videoMetrics['video_performance_p50'],
+                        'video_performance_p75' => $videoMetrics['video_performance_p75'],
+                        'video_performance_p95' => $videoMetrics['video_performance_p95'],
+                        'video_attributed_views' => $videoMetrics['video_attributed_views'],
+                        'video_attributed_view_time' => $videoMetrics['video_attributed_view_time'],
                         
                         // JSON fields
                         'actions' => isset($insight['actions']) ? $insight['actions'] : null,
@@ -970,7 +1354,7 @@ class FacebookAdsSyncService
     }
 
     /**
-     * Trích xuất thông tin Post từ Ad Creative
+     * Trích xuất Post data từ Ad
      */
     private function extractPostData(array $ad): ?array
     {
@@ -993,7 +1377,22 @@ class FacebookAdsSyncService
             $parts = explode('_', $storyId);
             if (count($parts) >= 2) {
                 $postId = $parts[1]; // Lấy phần thứ 2 (post ID)
-                return $this->getPostDetails($postId);
+                $pageId = $parts[0]; // Lấy phần thứ 1 (page ID)
+                
+                // Tạo post data từ thông tin có sẵn, không cần gọi API
+                return [
+                    'id' => $postId,
+                    'page_id' => $pageId,
+                    'from' => [
+                        'id' => $pageId,
+                        'name' => 'Page', // Có thể lấy từ page data sau
+                        'category' => null,
+                        'verification_status' => null,
+                    ],
+                    'message' => $ad['name'] ?? null,
+                    'created_time' => $ad['created_time'] ?? null,
+                    'updated_time' => $ad['updated_time'] ?? null,
+                ];
             }
         }
         
@@ -1004,7 +1403,22 @@ class FacebookAdsSyncService
             $parts = explode('_', $storyId);
             if (count($parts) >= 2) {
                 $postId = $parts[1]; // Lấy phần thứ 2 (post ID)
-                return $this->getPostDetails($postId);
+                $pageId = $parts[0]; // Lấy phần thứ 1 (page ID)
+                
+                // Tạo post data từ thông tin có sẵn, không cần gọi API
+                return [
+                    'id' => $postId,
+                    'page_id' => $pageId,
+                    'from' => [
+                        'id' => $pageId,
+                        'name' => 'Page', // Có thể lấy từ page data sau
+                        'category' => null,
+                        'verification_status' => null,
+                    ],
+                    'message' => $ad['name'] ?? null,
+                    'created_time' => $ad['created_time'] ?? null,
+                    'updated_time' => $ad['updated_time'] ?? null,
+                ];
             }
         }
         
@@ -1013,18 +1427,60 @@ class FacebookAdsSyncService
             $spec = $creative['object_story_spec'];
             
             if (isset($spec['link_data']['post_id'])) {
-                $storyId = $spec['link_data']['post_id'];
-                return $this->getPostDetails($storyId);
+                $postId = $spec['link_data']['post_id'];
+                $pageId = $ad['adset']['campaign']['ad_account']['business']['pages'][0]['id'] ?? null;
+                
+                return [
+                    'id' => $postId,
+                    'page_id' => $pageId,
+                    'from' => [
+                        'id' => $pageId,
+                        'name' => 'Page',
+                        'category' => null,
+                        'verification_status' => null,
+                    ],
+                    'message' => $ad['name'] ?? null,
+                    'created_time' => $ad['created_time'] ?? null,
+                    'updated_time' => $ad['updated_time'] ?? null,
+                ];
             }
             
             if (isset($spec['video_data']['post_id'])) {
-                $storyId = $spec['video_data']['post_id'];
-                return $this->getPostDetails($storyId);
+                $postId = $spec['video_data']['post_id'];
+                $pageId = $ad['adset']['campaign']['ad_account']['business']['pages'][0]['id'] ?? null;
+                
+                return [
+                    'id' => $postId,
+                    'page_id' => $pageId,
+                    'from' => [
+                        'id' => $pageId,
+                        'name' => 'Page',
+                        'category' => null,
+                        'verification_status' => null,
+                    ],
+                    'message' => $ad['name'] ?? null,
+                    'created_time' => $ad['created_time'] ?? null,
+                    'updated_time' => $ad['updated_time'] ?? null,
+                ];
             }
             
             if (isset($spec['photo_data']['post_id'])) {
-                $storyId = $spec['photo_data']['post_id'];
-                return $this->getPostDetails($storyId);
+                $postId = $spec['photo_data']['post_id'];
+                $pageId = $ad['adset']['campaign']['ad_account']['business']['pages'][0]['id'] ?? null;
+                
+                return [
+                    'id' => $postId,
+                    'page_id' => $pageId,
+                    'from' => [
+                        'id' => $pageId,
+                        'name' => 'Page',
+                        'category' => null,
+                        'verification_status' => null,
+                    ],
+                    'message' => $ad['name'] ?? null,
+                    'created_time' => $ad['created_time'] ?? null,
+                    'updated_time' => $ad['updated_time'] ?? null,
+                ];
             }
         }
         
@@ -1066,6 +1522,14 @@ class FacebookAdsSyncService
     }
 
     /**
+     * Trích xuất Page ID từ post data
+     */
+    private function extractPageId(FacebookAd $facebookAd, array $postData): ?string
+    {
+        return $postData['page_id'] ?? null;
+    }
+
+    /**
      * Trích xuất Post ID từ Ad
      */
     private function extractPostId(FacebookAd $facebookAd): ?string
@@ -1097,49 +1561,6 @@ class FacebookAdsSyncService
             
             } catch (\Exception $e) {
             Log::error("Lỗi khi extract post_id", [
-                'ad_id' => $facebookAd->id,
-                'error' => $e->getMessage()
-            ]);
-            return null;
-        }
-    }
-
-    /**
-     * Trích xuất Page ID từ Ad hoặc Post
-     */
-    private function extractPageId(FacebookAd $facebookAd, ?array $postData): ?string
-    {
-        try {
-            // Ưu tiên từ object_story_id (format: pageId_postId)
-            if ($facebookAd->creative) {
-                $creative = $facebookAd->creative->creative_data;
-                if (isset($creative['object_story_id'])) {
-                    $storyId = $creative['object_story_id'];
-                if (is_string($storyId)) {
-                    $parts = explode('_', $storyId);
-                        return $parts[0] ?? null;
-                }
-            }
-            
-            // Từ effective_object_story_id (format: pageId_postId)
-                if (isset($creative['effective_object_story_id'])) {
-                    $storyId = $creative['effective_object_story_id'];
-                if (is_string($storyId)) {
-                    $parts = explode('_', $storyId);
-                        return $parts[0] ?? null;
-                    }
-                }
-            }
-            
-            // Từ post data
-            if ($postData && isset($postData['from']['id'])) {
-                return $postData['from']['id'];
-            }
-            
-            return null;
-            
-        } catch (\Exception $e) {
-            Log::error("Lỗi khi extract page_id", [
                 'ad_id' => $facebookAd->id,
                 'error' => $e->getMessage()
             ]);
@@ -1263,6 +1684,27 @@ class FacebookAdsSyncService
                     }
                 }
 
+                // Chuẩn bị post/page từ creative nếu có
+                $pageIdForSave = $facebookAd->page_id ?? null;
+                $postIdForSave = $facebookAd->post_id ?? null;
+                try {
+                    if (isset($facebookAd->creative) && isset($facebookAd->creative->creative_data)) {
+                        $creative = $facebookAd->creative->creative_data;
+                        if (is_string($creative)) {
+                            $decoded = json_decode($creative, true);
+                            if (json_last_error() === JSON_ERROR_NONE) {
+                                $creative = $decoded;
+                            }
+                        }
+                        $objectStoryId = $creative['object_story_id'] ?? ($creative['effective_object_story_id'] ?? null);
+                        if (is_string($objectStoryId) && strpos($objectStoryId, '_') !== false) {
+                            [$pageIdFromCreative, $postIdFromCreative] = explode('_', $objectStoryId, 2);
+                            $pageIdForSave = $pageIdForSave ?: $pageIdFromCreative;
+                            $postIdForSave = $postIdForSave ?: $postIdFromCreative;
+                        }
+                    }
+                } catch (\Throwable $e) {}
+
                 FacebookAdInsight::updateOrCreate(
                     [
                         'ad_id' => $facebookAd->id,
@@ -1270,6 +1712,8 @@ class FacebookAdsSyncService
                     ],
                     [
                         'breakdowns' => json_encode($breakdowns),
+                        ...(Schema::hasColumn('facebook_ad_insights', 'post_id') && $postIdForSave ? ['post_id' => (string) $postIdForSave] : []),
+                        ...(Schema::hasColumn('facebook_ad_insights', 'page_id') && $pageIdForSave ? ['page_id' => (string) $pageIdForSave] : []),
                     ]
                 );
                 $result['ad_insights']++;
@@ -1664,13 +2108,13 @@ class FacebookAdsSyncService
                             'actions' => isset($insight['actions']) ? json_encode($insight['actions']) : null,
                             'action_values' => isset($insight['action_values']) ? json_encode($insight['action_values']) : null,
                             
-                            // Video metrics trực tiếp từ API
+                            // Video metrics chính từ API
+                            'video_views' => (int) ($insight['video_views'] ?? 0),
                             'video_plays' => (int) ($insight['video_plays'] ?? 0),
-                            'video_plays_at_25_percent' => (int) ($insight['video_plays_at_25_percent'] ?? 0),
-                            'video_plays_at_50_percent' => (int) ($insight['video_plays_at_50_percent'] ?? 0),
-                            'video_plays_at_75_percent' => (int) ($insight['video_plays_at_75_percent'] ?? 0),
-                            'video_plays_at_100_percent' => (int) ($insight['video_plays_at_100_percent'] ?? 0),
-                            'video_avg_time_watched_actions' => (int) ($insight['video_avg_time_watched_actions'] ?? 0),
+                            'video_plays_at_25' => (int) ($insight['video_plays_at_25'] ?? 0),
+                            'video_plays_at_50' => (int) ($insight['video_plays_at_50'] ?? 0),
+                            'video_plays_at_75' => (int) ($insight['video_plays_at_75'] ?? 0),
+                            'video_plays_at_100' => (int) ($insight['video_plays_at_100'] ?? 0),
                             'video_p25_watched_actions' => (int) ($insight['video_p25_watched_actions'] ?? 0),
                             'video_p50_watched_actions' => (int) ($insight['video_p50_watched_actions'] ?? 0),
                             'video_p75_watched_actions' => (int) ($insight['video_p75_watched_actions'] ?? 0),
@@ -1679,16 +2123,7 @@ class FacebookAdsSyncService
                             'thruplays' => (int) ($insight['thruplays'] ?? 0),
                             'video_avg_time_watched' => (float) ($insight['video_avg_time_watched'] ?? 0),
                             'video_view_time' => (int) ($insight['video_view_time'] ?? 0),
-                            
-                            // Post video metrics
-                            'post_video_views' => (int) ($insight['post_video_views'] ?? 0),
-                            'post_video_views_unique' => (int) ($insight['post_video_views_unique'] ?? 0),
-                            'post_video_avg_time_watched' => (float) ($insight['post_video_avg_time_watched'] ?? 0),
-                            'post_video_complete_views_30s' => (int) ($insight['post_video_complete_views_30s'] ?? 0),
-                            'post_video_views_10s' => (int) ($insight['post_video_views_10s'] ?? 0),
-                            'post_video_retention_graph' => isset($insight['post_video_retention_graph']) ? json_encode($insight['post_video_retention_graph']) : null,
-                            'post_video_views_paid' => (int) ($insight['post_video_views_paid'] ?? 0),
-                            'post_video_views_organic' => (int) ($insight['post_video_views_organic'] ?? 0),
+                            'video_30_sec_watched' => (int) ($insight['video_30_sec_watched'] ?? 0),
                         ]
                     );
                 }
@@ -1987,6 +2422,56 @@ class FacebookAdsSyncService
 
         } catch (\Exception $e) {
             Log::error("Lỗi khi lưu creative data", [
+                'ad_id' => $facebookAd->id,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Cập nhật engagement data cho post từ Ad Insights
+     */
+    private function updatePostEngagementFromAdInsights(FacebookAd $facebookAd, array &$result): void
+    {
+        try {
+            $post = FacebookPost::find($facebookAd->post_id);
+            if (!$post) {
+                Log::warning("Không tìm thấy post với ID: {$facebookAd->post_id}");
+                return;
+            }
+            
+            // Lấy engagement data từ Ad Insights API
+            $engagementData = $this->api->getAdEngagementData($facebookAd->id);
+            
+            if (!isset($engagementData['error'])) {
+                // Cập nhật post với engagement data
+                $post->update([
+                    'likes_count' => $engagementData['likes'] ?? 0,
+                    'shares_count' => $engagementData['shares'] ?? 0,
+                    'comments_count' => $engagementData['comments'] ?? 0,
+                    'reactions_count' => $engagementData['reactions'] ?? 0,
+                    'engagement_updated_at' => now(),
+                ]);
+                
+                Log::info("Đã cập nhật engagement data cho post từ Ad Insights", [
+                    'post_id' => $post->id,
+                    'ad_id' => $facebookAd->id,
+                    'likes' => $engagementData['likes'] ?? 0,
+                    'shares' => $engagementData['shares'] ?? 0,
+                    'comments' => $engagementData['comments'] ?? 0,
+                    'reactions' => $engagementData['reactions'] ?? 0,
+                ]);
+            } else {
+                Log::warning("Không lấy được engagement data từ Ad Insights API", [
+                    'post_id' => $post->id,
+                    'ad_id' => $facebookAd->id,
+                    'error' => $engagementData['error'] ?? 'Unknown error'
+                ]);
+            }
+            
+        } catch (\Exception $e) {
+            Log::error("Lỗi khi cập nhật engagement data cho post", [
+                'post_id' => $facebookAd->post_id,
                 'ad_id' => $facebookAd->id,
                 'error' => $e->getMessage()
             ]);

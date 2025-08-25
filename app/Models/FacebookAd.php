@@ -48,7 +48,8 @@ class FacebookAd extends Model
      */
     public function post()
     {
-        return $this->belongsTo(FacebookPost::class, 'post_id', 'id');
+        // Bảng posts đã bị loại bỏ; giữ stub để tránh lỗi gọi quan hệ cũ
+        return $this->belongsTo(\App\Models\FacebookPost::class, 'post_id', 'id');
     }
 
     /**
@@ -56,7 +57,8 @@ class FacebookAd extends Model
      */
     public function page()
     {
-        return $this->belongsTo(FacebookPage::class, 'page_id', 'id');
+        // Bảng pages đã bị loại bỏ; giữ stub để tránh lỗi gọi quan hệ cũ
+        return $this->belongsTo(\App\Models\FacebookPage::class, 'page_id', 'id');
     }
 
     /**
