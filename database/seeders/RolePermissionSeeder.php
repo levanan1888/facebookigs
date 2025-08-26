@@ -45,6 +45,7 @@ class RolePermissionSeeder extends Seeder
             'facebook.hierarchy',
             'facebook.analytics',
             'facebook.data_raw',
+            'view-facebook-data',
             // Facebook hierarchy API access (for module-only API)
             'facebook.hierarchy.api',
             // Analytics filter UI permission
@@ -89,7 +90,7 @@ class RolePermissionSeeder extends Seeder
         $manager->givePermissionTo([
             'user.view', 'user.edit',
             'dashboard.view', 'dashboard.analytics',
-            'facebook.overview', 'facebook.hierarchy', 'facebook.analytics', 'facebook.data_raw', 'facebook.hierarchy.api',
+            'facebook.overview', 'facebook.hierarchy', 'facebook.analytics', 'facebook.data_raw', 'view-facebook-data', 'facebook.hierarchy.api',
             'analytics.filter', 'analytics.filter.time', 'analytics.filter.scope', 'analytics.filter.metrics', 'analytics.filter.sort',
             'analytics.options', 'analytics.summary', 'analytics.breakdown', 'analytics.series', 'analytics.ad-details',
             'settings.view',
@@ -102,6 +103,7 @@ class RolePermissionSeeder extends Seeder
             'dashboard.view',
             'settings.view',
             'facebook.overview',
+            'view-facebook-data',
             // Cho phép xem cấu trúc nếu cần (tùy chính sách):
             // 'facebook.hierarchy.api',
         ]);

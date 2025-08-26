@@ -9,6 +9,8 @@ use App\Models\FacebookAdAccount;
 use App\Models\FacebookAdSet;
 use App\Models\FacebookBusiness;
 use App\Models\FacebookCampaign;
+use App\Models\FacebookPost;
+use App\Models\FacebookAdInsight;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -28,13 +30,27 @@ class UnifiedDataService
             'pages' => FacebookAd::whereNotNull('page_id')->distinct('page_id')->count(),
             'posts' => FacebookAd::whereNotNull('post_id')->distinct('post_id')->count(),
             'insights' => FacebookAd::whereNotNull('last_insights_sync')->count(),
-            'spend' => FacebookAd::where('last_insights_sync', '>=', $startDate)->sum('ad_spend') ?? 0,
-            'impressions' => FacebookAd::where('last_insights_sync', '>=', $startDate)->sum('ad_impressions') ?? 0,
-            'clicks' => FacebookAd::where('last_insights_sync', '>=', $startDate)->sum('ad_clicks') ?? 0,
-            'reach' => FacebookAd::where('last_insights_sync', '>=', $startDate)->sum('ad_reach') ?? 0,
-            'ctr' => FacebookAd::where('last_insights_sync', '>=', $startDate)->avg('ad_ctr') ?? 0,
-            'cpc' => FacebookAd::where('last_insights_sync', '>=', $startDate)->avg('ad_cpc') ?? 0,
-            'cpm' => FacebookAd::where('last_insights_sync', '>=', $startDate)->avg('ad_cpm') ?? 0,
+            'spend' => \App\Models\FacebookAdInsight::join('facebook_ads', 'facebook_ad_insights.ad_id', '=', 'facebook_ads.id')
+                ->where('facebook_ads.last_insights_sync', '>=', $startDate)
+                ->sum('facebook_ad_insights.spend') ?? 0,
+            'impressions' => \App\Models\FacebookAdInsight::join('facebook_ads', 'facebook_ad_insights.ad_id', '=', 'facebook_ads.id')
+                ->where('facebook_ads.last_insights_sync', '>=', $startDate)
+                ->sum('facebook_ad_insights.impressions') ?? 0,
+            'clicks' => \App\Models\FacebookAdInsight::join('facebook_ads', 'facebook_ad_insights.ad_id', '=', 'facebook_ads.id')
+                ->where('facebook_ads.last_insights_sync', '>=', $startDate)
+                ->sum('facebook_ad_insights.clicks') ?? 0,
+            'reach' => \App\Models\FacebookAdInsight::join('facebook_ads', 'facebook_ad_insights.ad_id', '=', 'facebook_ads.id')
+                ->where('facebook_ads.last_insights_sync', '>=', $startDate)
+                ->sum('facebook_ad_insights.reach') ?? 0,
+            'ctr' => \App\Models\FacebookAdInsight::join('facebook_ads', 'facebook_ad_insights.ad_id', '=', 'facebook_ads.id')
+                ->where('facebook_ads.last_insights_sync', '>=', $startDate)
+                ->avg('facebook_ad_insights.ctr') ?? 0,
+            'cpc' => \App\Models\FacebookAdInsight::join('facebook_ads', 'facebook_ad_insights.ad_id', '=', 'facebook_ads.id')
+                ->where('facebook_ads.last_insights_sync', '>=', $startDate)
+                ->avg('facebook_ad_insights.cpc') ?? 0,
+            'cpm' => \App\Models\FacebookAdInsight::join('facebook_ads', 'facebook_ad_insights.ad_id', '=', 'facebook_ads.id')
+                ->where('facebook_ads.last_insights_sync', '>=', $startDate)
+                ->avg('facebook_ad_insights.cpm') ?? 0,
         ];
 
         // Time series data
@@ -42,22 +58,34 @@ class UnifiedDataService
             $date = now()->subDays($daysAgo)->toDateString();
             return [
                 'date' => $date,
-                'spend' => FacebookAd::whereDate('last_insights_sync', $date)->sum('ad_spend') ?? 0,
-                'impressions' => FacebookAd::whereDate('last_insights_sync', $date)->sum('ad_impressions') ?? 0,
-                'clicks' => FacebookAd::whereDate('last_insights_sync', $date)->sum('ad_clicks') ?? 0,
-                'reach' => FacebookAd::whereDate('last_insights_sync', $date)->sum('ad_reach') ?? 0,
+                'spend' => \App\Models\FacebookAdInsight::join('facebook_ads', 'facebook_ad_insights.ad_id', '=', 'facebook_ads.id')
+                    ->whereDate('facebook_ad_insights.date', $date)
+                    ->sum('facebook_ad_insights.spend') ?? 0,
+                'impressions' => \App\Models\FacebookAdInsight::join('facebook_ads', 'facebook_ad_insights.ad_id', '=', 'facebook_ads.id')
+                    ->whereDate('facebook_ad_insights.date', $date)
+                    ->sum('facebook_ad_insights.impressions') ?? 0,
+                'clicks' => \App\Models\FacebookAdInsight::join('facebook_ads', 'facebook_ad_insights.ad_id', '=', 'facebook_ads.id')
+                    ->whereDate('facebook_ad_insights.date', $date)
+                    ->sum('facebook_ad_insights.clicks') ?? 0,
+                'reach' => \App\Models\FacebookAdInsight::join('facebook_ads', 'facebook_ad_insights.ad_id', '=', 'facebook_ads.id')
+                    ->whereDate('facebook_ad_insights.date', $date)
+                    ->sum('facebook_ad_insights.reach') ?? 0,
                 'posts' => FacebookAd::whereDate('last_insights_sync', $date)->whereNotNull('post_id')->count(),
             ];
         });
 
-        // Top posts
-        $topPosts = FacebookAd::whereNotNull('post_id')
-            ->orderByRaw('(post_likes + post_shares + post_comments) DESC')
+        // Top posts - Sử dụng dữ liệu từ facebook_posts thay vì các cột không tồn tại
+        $topPosts = \App\Models\FacebookPost::select([
+                'facebook_posts.id as post_id', 
+                'facebook_posts.message as post_message', 
+                'facebook_posts.type as post_type',
+                'facebook_posts.likes_count as post_likes',
+                'facebook_posts.shares_count as post_shares',
+                'facebook_posts.comments_count as post_comments'
+            ])
+            ->orderByRaw('(facebook_posts.likes_count + facebook_posts.shares_count + facebook_posts.comments_count) DESC')
             ->limit(10)
-            ->get([
-                'post_id', 'post_message', 'post_type', 'post_likes', 'post_shares', 'post_comments',
-                'post_impressions', 'post_reach', 'ad_spend'
-            ]);
+            ->get();
 
         return [
             'totals' => $totals,
@@ -73,22 +101,38 @@ class UnifiedDataService
         
         // Current period
         $current = [
-            'spend' => FacebookAd::where('last_insights_sync', '>=', $startDate)->sum('ad_spend') ?? 0,
-            'impressions' => FacebookAd::where('last_insights_sync', '>=', $startDate)->sum('ad_impressions') ?? 0,
-            'clicks' => FacebookAd::where('last_insights_sync', '>=', $startDate)->sum('ad_clicks') ?? 0,
-            'reach' => FacebookAd::where('last_insights_sync', '>=', $startDate)->sum('ad_reach') ?? 0,
+            'spend' => \App\Models\FacebookAdInsight::join('facebook_ads', 'facebook_ad_insights.ad_id', '=', 'facebook_ads.id')
+                ->where('facebook_ads.last_insights_sync', '>=', $startDate)
+                ->sum('facebook_ad_insights.spend') ?? 0,
+            'impressions' => \App\Models\FacebookAdInsight::join('facebook_ads', 'facebook_ad_insights.ad_id', '=', 'facebook_ads.id')
+                ->where('facebook_ads.last_insights_sync', '>=', $startDate)
+                ->sum('facebook_ad_insights.impressions') ?? 0,
+            'clicks' => \App\Models\FacebookAdInsight::join('facebook_ads', 'facebook_ad_insights.ad_id', '=', 'facebook_ads.id')
+                ->where('facebook_ads.last_insights_sync', '>=', $startDate)
+                ->sum('facebook_ad_insights.clicks') ?? 0,
+            'reach' => \App\Models\FacebookAdInsight::join('facebook_ads', 'facebook_ad_insights.ad_id', '=', 'facebook_ads.id')
+                ->where('facebook_ads.last_insights_sync', '>=', $startDate)
+                ->sum('facebook_ad_insights.reach') ?? 0,
         ];
 
         // Previous period
         $previous = [
-            'spend' => FacebookAd::where('last_insights_sync', '>=', $previousStartDate)
-                ->where('last_insights_sync', '<', $startDate)->sum('ad_spend') ?? 0,
-            'impressions' => FacebookAd::where('last_insights_sync', '>=', $previousStartDate)
-                ->where('last_insights_sync', '<', $startDate)->sum('ad_impressions') ?? 0,
-            'clicks' => FacebookAd::where('last_insights_sync', '>=', $previousStartDate)
-                ->where('last_insights_sync', '<', $startDate)->sum('ad_clicks') ?? 0,
-            'reach' => FacebookAd::where('last_insights_sync', '>=', $previousStartDate)
-                ->where('last_insights_sync', '<', $startDate)->sum('ad_reach') ?? 0,
+            'spend' => \App\Models\FacebookAdInsight::join('facebook_ads', 'facebook_ad_insights.ad_id', '=', 'facebook_ads.id')
+                ->where('facebook_ads.last_insights_sync', '>=', $previousStartDate)
+                ->where('facebook_ads.last_insights_sync', '<', $startDate)
+                ->sum('facebook_ad_insights.spend') ?? 0,
+            'impressions' => \App\Models\FacebookAdInsight::join('facebook_ad_insights.ad_id', '=', 'facebook_ads.id')
+                ->where('facebook_ads.last_insights_sync', '>=', $previousStartDate)
+                ->where('facebook_ads.last_insights_sync', '<', $startDate)
+                ->sum('facebook_ad_insights.impressions') ?? 0,
+            'clicks' => \App\Models\FacebookAdInsight::join('facebook_ads', 'facebook_ad_insights.ad_id', '=', 'facebook_ads.id')
+                ->where('facebook_ads.last_insights_sync', '>=', $previousStartDate)
+                ->where('facebook_ads.last_insights_sync', '<', $startDate)
+                ->sum('facebook_ad_insights.clicks') ?? 0,
+            'reach' => \App\Models\FacebookAdInsight::join('facebook_ads', 'facebook_ad_insights.ad_id', '=', 'facebook_ads.id')
+                ->where('facebook_ads.last_insights_sync', '>=', $previousStartDate)
+                ->where('facebook_ads.last_insights_sync', '<', $startDate)
+                ->sum('facebook_ad_insights.reach') ?? 0,
         ];
 
         return [
@@ -122,9 +166,15 @@ class UnifiedDataService
         return [
             'total_ads' => $data->count(),
             'total_posts' => $data->whereNotNull('post_id')->count(),
-            'total_spend' => $data->sum('ad_spend'),
-            'total_impressions' => $data->sum('ad_impressions'),
-            'avg_ctr' => $data->avg('ad_ctr'),
+            'total_spend' => \App\Models\FacebookAdInsight::join('facebook_ads', 'facebook_ad_insights.ad_id', '=', 'facebook_ads.id')
+                ->whereIn('facebook_ads.id', $data->pluck('id'))
+                ->sum('facebook_ad_insights.spend'),
+            'total_impressions' => \App\Models\FacebookAdInsight::join('facebook_ads', 'facebook_ad_insights.ad_id', '=', 'facebook_ads.id')
+                ->whereIn('facebook_ads.id', $data->pluck('id'))
+                ->sum('facebook_ad_insights.impressions'),
+            'avg_ctr' => \App\Models\FacebookAdInsight::join('facebook_ads', 'facebook_ad_insights.ad_id', '=', 'facebook_ads.id')
+                ->whereIn('facebook_ads.id', $data->pluck('id'))
+                ->avg('facebook_ad_insights.ctr'),
             'data' => $data,
         ];
     }
@@ -152,25 +202,25 @@ class UnifiedDataService
 
     public function getDailyStats(string $date): array
     {
-        $insights = FacebookAd::whereDate('last_insights_sync', $date)->first();
-        $posts = FacebookAd::whereDate('last_insights_sync', $date)->whereNotNull('post_id')->get();
+        $insights = \App\Models\FacebookAdInsight::whereDate('date', $date)->first();
+        $posts = \App\Models\FacebookPost::whereDate('created_time', $date)->get();
 
         return [
             'date' => $date,
             'insights' => $insights ? [
-                'spend' => $insights->ad_spend ?? 0,
-                'impressions' => $insights->ad_impressions ?? 0,
-                'clicks' => $insights->ad_clicks ?? 0,
-                'reach' => $insights->ad_reach ?? 0,
+                'spend' => $insights->spend ?? 0,
+                'impressions' => $insights->impressions ?? 0,
+                'clicks' => $insights->clicks ?? 0,
+                'reach' => $insights->reach ?? 0,
             ] : null,
             'posts' => $posts->map(function ($post) {
                 return [
-                    'post_id' => $post->post_id,
-                    'message' => $post->post_message,
-                    'type' => $post->post_type,
-                    'likes' => $post->post_likes ?? 0,
-                    'shares' => $post->post_shares ?? 0,
-                    'comments' => $post->post_comments ?? 0,
+                    'post_id' => $post->id,
+                    'message' => $post->message,
+                    'type' => $post->type,
+                    'likes' => $post->likes_count ?? 0,
+                    'shares' => $post->shares_count ?? 0,
+                    'comments' => $post->comments_count ?? 0,
                 ];
             }),
         ];
@@ -181,13 +231,12 @@ class UnifiedDataService
         $startDate = now()->subDays(30)->toDateString();
         
         return [
-            'total_spend' => FacebookAd::where('last_insights_sync', '>=', $startDate)->sum('ad_spend') ?? 0,
-            'total_impressions' => FacebookAd::where('last_insights_sync', '>=', $startDate)->sum('ad_impressions') ?? 0,
-            'avg_ctr' => FacebookAd::where('last_insights_sync', '>=', $startDate)->avg('ad_ctr') ?? 0,
-            'total_posts' => FacebookAd::where('last_insights_sync', '>=', $startDate)->whereNotNull('post_id')->count(),
-            'total_engagement' => FacebookAd::where('last_insights_sync', '>=', $startDate)
-                ->whereNotNull('post_id')
-                ->sum(DB::raw('post_likes + post_shares + post_comments')),
+            'total_spend' => \App\Models\FacebookAdInsight::where('date', '>=', $startDate)->sum('spend') ?? 0,
+            'total_impressions' => \App\Models\FacebookAdInsight::where('date', '>=', $startDate)->sum('impressions') ?? 0,
+            'avg_ctr' => \App\Models\FacebookAdInsight::where('date', '>=', $startDate)->avg('ctr') ?? 0,
+            'total_posts' => \App\Models\FacebookPost::where('created_time', '>=', $startDate)->count(),
+            'total_engagement' => \App\Models\FacebookPost::where('created_time', '>=', $startDate)
+                ->sum(\Illuminate\Support\Facades\DB::raw('likes_count + shares_count + comments_count')),
         ];
     }
 

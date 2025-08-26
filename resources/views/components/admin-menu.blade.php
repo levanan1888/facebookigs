@@ -4,6 +4,16 @@
         Quản trị hệ thống
     </h3>
     
+    @can('view-facebook-data')
+    <a href="{{ route('facebook.data-management.index') }}" 
+       class="group flex items-center px-3 py-2 text-sm font-medium text-gray-600 rounded-md hover:text-gray-900 hover:bg-gray-50 {{ request()->routeIs('facebook.data-management.*') ? 'bg-gray-100 text-gray-900' : '' }}">
+        <svg class="text-gray-400 group-hover:text-gray-500 mr-3 flex-shrink-0 h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+        </svg>
+        Quản lý dữ liệu Facebook
+    </a>
+    @endcan
+    
     @can('user.view')
     <a href="{{ route('admin.users.index') }}" 
        class="group flex items-center px-3 py-2 text-sm font-medium text-gray-600 rounded-md hover:text-gray-900 hover:bg-gray-50 {{ request()->routeIs('admin.users.*') ? 'bg-gray-100 text-gray-900' : '' }}">

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Models\FacebookAd;
+use App\Models\FacebookAdInsight;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
@@ -25,12 +26,23 @@ class UnifiedDashboardController extends Controller
         $from = $request->get('from') ?: now()->subDays(29)->toDateString();
         $to = $request->get('to') ?: now()->toDateString();
 
+        // Sử dụng dữ liệu từ facebook_ad_insights thay vì các cột không tồn tại
         $fb = [
-            'spend' => (float) FacebookAd::whereBetween('last_insights_sync', [$from, $to])->sum('ad_spend'),
-            'impressions' => (int) FacebookAd::whereBetween('last_insights_sync', [$from, $to])->sum('ad_impressions'),
-            'clicks' => (int) FacebookAd::whereBetween('last_insights_sync', [$from, $to])->sum('ad_clicks'),
-            'reach' => (int) FacebookAd::whereBetween('last_insights_sync', [$from, $to])->sum('ad_reach'),
-            'ctr' => (float) FacebookAd::whereBetween('last_insights_sync', [$from, $to])->avg('ad_ctr'),
+            'spend' => (float) \App\Models\FacebookAdInsight::join('facebook_ads', 'facebook_ad_insights.ad_id', '=', 'facebook_ads.id')
+                ->whereBetween('facebook_ad_insights.date', [$from, $to])
+                ->sum('facebook_ad_insights.spend'),
+            'impressions' => (int) \App\Models\FacebookAdInsight::join('facebook_ads', 'facebook_ad_insights.ad_id', '=', 'facebook_ads.id')
+                ->whereBetween('facebook_ad_insights.date', [$from, $to])
+                ->sum('facebook_ad_insights.impressions'),
+            'clicks' => (int) \App\Models\FacebookAdInsight::join('facebook_ads', 'facebook_ad_insights.ad_id', '=', 'facebook_ads.id')
+                ->whereBetween('facebook_ad_insights.date', [$from, $to])
+                ->sum('facebook_ad_insights.clicks'),
+            'reach' => (int) \App\Models\FacebookAdInsight::join('facebook_ads', 'facebook_ad_insights.ad_id', '=', 'facebook_ads.id')
+                ->whereBetween('facebook_ad_insights.date', [$from, $to])
+                ->sum('facebook_ad_insights.reach'),
+            'ctr' => (float) \App\Models\FacebookAdInsight::join('facebook_ads', 'facebook_ad_insights.ad_id', '=', 'facebook_ads.id')
+                ->whereBetween('facebook_ad_insights.date', [$from, $to])
+                ->avg('facebook_ad_insights.ctr'),
         ];
 
         $google = ['spend' => 0, 'impressions' => 0, 'clicks' => 0, 'reach' => 0, 'ctr' => 0];
@@ -46,7 +58,7 @@ class UnifiedDashboardController extends Controller
         $series = collect(range(6, 0))->map(function (int $d) use ($from, $to) {
             $date = now()->subDays($d)->toDateString();
             $spend = ($date >= $from && $date <= $to)
-                ? (float) FacebookAd::whereDate('last_insights_sync', $date)->sum('ad_spend')
+                ? (float) \App\Models\FacebookAdInsight::whereDate('date', $date)->sum('spend')
                 : 0;
             return ['date' => $date, 'spend' => $spend];
         });

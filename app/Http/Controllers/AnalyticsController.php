@@ -6,6 +6,7 @@ namespace App\Http\Controllers;
 use App\Models\FacebookAdAccount;
 use App\Models\FacebookBusiness;
 use App\Models\FacebookAd;
+use App\Models\FacebookAdInsight;
 use App\Services\AnalyticsService;
 use Illuminate\Http\Request;
 
@@ -24,15 +25,23 @@ class AnalyticsController extends Controller
             ->with(['adAccounts' => function ($q) use ($dateFrom, $dateTo) {
                 $q->withSum(['ads as spend_sum' => function ($q2) use ($dateFrom, $dateTo) {
                     $q2->whereBetween('last_insights_sync', [$dateFrom, $dateTo]);
-                }], 'ad_spend');
+                }], 'id');
             }])
             ->get()
             ->map(function (FacebookBusiness $b) {
                 $sum = $b->adAccounts->sum('spend_sum');
+                // Tính tổng spend từ insights
+                $totalSpend = \App\Models\FacebookAdInsight::join('facebook_ads', 'facebook_ad_insights.ad_id', '=', 'facebook_ads.id')
+                    ->join('facebook_ad_accounts', 'facebook_ads.account_id', '=', 'facebook_ad_accounts.id')
+                    ->join('facebook_businesses', 'facebook_ad_accounts.business_id', '=', 'facebook_businesses.id')
+                    ->where('facebook_businesses.id', $b->id)
+                    ->whereBetween('facebook_ad_insights.date', [$dateFrom, $dateTo])
+                    ->sum('facebook_ad_insights.spend');
+                
                 return [
                     'id' => $b->id,
                     'name' => $b->name,
-                    'spend' => (float) $sum,
+                    'spend' => (float) $totalSpend,
                     'accounts' => $b->adAccounts->count(),
                 ];
             })
@@ -40,34 +49,44 @@ class AnalyticsController extends Controller
             ->values();
 
         $topAccounts = FacebookAdAccount::query()
-            ->withSum(['ads as spend_sum' => function ($q) use ($dateFrom, $dateTo) {
-                $q->whereBetween('last_insights_sync', [$dateFrom, $dateTo]);
-            }], 'ad_spend')
-            ->orderByDesc('spend_sum')
-            ->limit(20)
             ->get(['id','account_id','name'])
-            ->map(function (FacebookAdAccount $a) {
+            ->map(function (FacebookAdAccount $a) use ($dateFrom, $dateTo) {
+                // Tính tổng spend từ insights
+                $totalSpend = \App\Models\FacebookAdInsight::join('facebook_ads', 'facebook_ad_insights.ad_id', '=', 'facebook_ads.id')
+                    ->where('facebook_ads.account_id', $a->id)
+                    ->whereBetween('facebook_ad_insights.date', [$dateFrom, $dateTo])
+                    ->sum('facebook_ad_insights.spend');
+                
                 return [
                     'id' => $a->id,
                     'account_id' => $a->account_id,
                     'name' => $a->name,
-                    'spend' => (float) ($a->spend_sum ?? 0),
+                    'spend' => (float) $totalSpend,
                 ];
-            });
+            })
+            ->sortByDesc('spend')
+            ->values()
+            ->take(20);
 
         $base = FacebookAd::query()->whereBetween('last_insights_sync', [$dateFrom, $dateTo]);
-        $spend = (float) $base->clone()->sum('ad_spend');
-        $impressions = (int) $base->clone()->sum('ad_impressions');
-        $clicks = (int) $base->clone()->sum('ad_clicks');
+        $spend = (float) \App\Models\FacebookAdInsight::join('facebook_ads', 'facebook_ad_insights.ad_id', '=', 'facebook_ads.id')
+            ->whereBetween('facebook_ads.last_insights_sync', [$dateFrom, $dateTo])
+            ->sum('facebook_ad_insights.spend');
+        $impressions = (int) \App\Models\FacebookAdInsight::join('facebook_ads', 'facebook_ad_insights.ad_id', '=', 'facebook_ads.id')
+            ->whereBetween('facebook_ads.last_insights_sync', [$dateFrom, $dateTo])
+            ->sum('facebook_ad_insights.impressions');
+        $clicks = (int) \App\Models\FacebookAdInsight::join('facebook_ads', 'facebook_ad_insights.ad_id', '=', 'facebook_ads.id')
+            ->whereBetween('facebook_ads.last_insights_sync', [$dateFrom, $dateTo])
+            ->sum('facebook_ad_insights.clicks');
         $ctr = $impressions > 0 ? ($clicks / $impressions) * 100.0 : 0.0;
         $cpc = $clicks > 0 ? ($spend / $clicks) : 0.0;
         $cpm = $impressions > 0 ? ($spend / $impressions) * 1000.0 : 0.0;
         // ROAS: tổng purchase value / spend (nếu có action_values.purchase)
-        $purchaseValue = (float) FacebookAd::query()
-            ->whereBetween('last_insights_sync', [$dateFrom, $dateTo])
-            ->get(['ad_action_values'])
+        $purchaseValue = (float) \App\Models\FacebookAdInsight::join('facebook_ads', 'facebook_ad_insights.ad_id', '=', 'facebook_ads.id')
+            ->whereBetween('facebook_ads.last_insights_sync', [$dateFrom, $dateTo])
+            ->get(['facebook_ad_insights.action_values'])
             ->sum(function ($row) {
-                $vals = is_array($row->ad_action_values) ? $row->ad_action_values : [];
+                $vals = is_array($row->action_values) ? $row->action_values : [];
                 foreach ($vals as $v) {
                     if (($v['action_type'] ?? '') === 'purchase') {
                         return (float) ($v['value'] ?? 0);

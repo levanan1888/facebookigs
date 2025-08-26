@@ -33,6 +33,9 @@
                     @can('facebook.data_raw')
                         <flux:navlist.item icon="document-text" :href="route('facebook.data-raw')" :current="request()->routeIs('facebook.data-raw')" wire:navigate>{{ __('Data Raw') }}</flux:navlist.item>
                     @endcan
+                    @can('view-facebook-data')
+                        <flux:navlist.item icon="document-text" :href="route('facebook.data-management.index')" :current="request()->routeIs('facebook.data-management.*')" wire:navigate>{{ __('Data Management') }}</flux:navlist.item>
+                    @endcan
                 </flux:navlist.group>
             </flux:navlist>
 

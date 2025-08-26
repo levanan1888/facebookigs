@@ -262,11 +262,11 @@
                                         @endif
                                     </td>
                                     <td class="px-3 py-2 text-xs">{{ optional($ad->created_time)->format('d/m/Y') ?? 'N/A' }}</td>
-                                    <td class="px-3 py-2 text-sm font-medium">${{ number_format($ad->ad_spend ?? 0, 2) }}</td>
-                                    <td class="px-3 py-2 text-sm">{{ number_format($ad->ad_impressions ?? 0) }}</td>
-                                    <td class="px-3 py-2 text-sm">{{ number_format($ad->ad_clicks ?? 0) }}</td>
-                                    <td class="px-3 py-2 text-sm">{{ number_format($ad->ad_ctr ?? 0, 2) }}%</td>
-                                    <td class="px-3 py-2 text-sm">${{ number_format($ad->ad_cpc ?? 0, 2) }}</td>
+                                    <td class="px-3 py-2 text-sm font-medium">${{ number_format($ad->insights->sum('spend') ?? 0, 2) }}</td>
+                                    <td class="px-3 py-2 text-sm">{{ number_format($ad->insights->sum('impressions') ?? 0) }}</td>
+                                    <td class="px-3 py-2 text-sm">{{ number_format($ad->insights->sum('clicks') ?? 0) }}</td>
+                                    <td class="px-3 py-2 text-sm">{{ number_format($ad->insights->avg('ctr') ?? 0, 2) }}%</td>
+                                    <td class="px-3 py-2 text-sm">${{ number_format($ad->insights->avg('cpc') ?? 0, 2) }}</td>
                                     <td class="px-3 py-2 text-xs text-gray-500">{{ optional($ad->last_insights_sync)->format('d/m/Y H:i') ?? 'N/A' }}</td>
                                 </tr>
                             @endforeach
@@ -359,17 +359,17 @@
                                     </td>
                                     <td class="px-3 py-2">
                                         <div class="text-xs space-y-1">
-                                            <div>💰 ${{ number_format($ad->ad_spend ?? 0, 2) }}</div>
-                                            <div>👁️ {{ number_format($ad->ad_impressions ?? 0) }}</div>
-                                            <div>🖱️ {{ number_format($ad->ad_clicks ?? 0) }}</div>
-                                            <div>📈 {{ number_format($ad->ad_reach ?? 0) }}</div>
+                                            <div>💰 ${{ number_format($ad->insights->sum('spend') ?? 0, 2) }}</div>
+                                            <div>👁️ {{ number_format($ad->insights->sum('impressions') ?? 0) }}</div>
+                                            <div>🖱️ {{ number_format($ad->insights->sum('clicks') ?? 0) }}</div>
+                                            <div>📈 {{ number_format($ad->insights->sum('reach') ?? 0) }}</div>
                                         </div>
                                     </td>
                                     <td class="px-3 py-2">
                                         <div class="text-xs space-y-1">
-                                            <div>CTR: {{ number_format($ad->ad_ctr ?? 0, 2) }}%</div>
-                                            <div>CPC: ${{ number_format($ad->ad_cpc ?? 0, 2) }}</div>
-                                            <div>CPM: ${{ number_format($ad->ad_cpm ?? 0, 2) }}</div>
+                                            <div>CTR: {{ number_format($ad->insights->avg('ctr') ?? 0, 2) }}%</div>
+                                            <div>CPC: ${{ number_format($ad->insights->avg('cpc') ?? 0, 2) }}</div>
+                                            <div>CPM: ${{ number_format($ad->insights->avg('cpm') ?? 0, 2) }}</div>
                                             <div>Eng: {{ number_format($ad->post_engagement_rate ?? 0, 2) }}%</div>
                                         </div>
                                     </td>
