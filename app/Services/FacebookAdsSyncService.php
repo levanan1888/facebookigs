@@ -563,20 +563,20 @@ class FacebookAdsSyncService
                         'hide_all_clicks' => (int) ($insight['hide_all_clicks'] ?? 0),
                         'unlikes' => (int) ($insight['unlikes'] ?? 0),
                         'negative_feedback' => (int) ($insight['negative_feedback'] ?? 0),
-                        'video_views' => (int) ($insight['post_video_views'] ?? 0),
-                        'video_view_time' => (int) ($insight['post_video_views_unique'] ?? 0), // Sử dụng unique views thay vì view_time
-                        'video_avg_time_watched' => (float) ($insight['post_video_avg_time_watched'] ?? 0),
-                        'video_plays' => (int) ($insight['post_video_views'] ?? 0), // Sử dụng total views
-                        'video_plays_at_25' => (int) ($insight['post_video_complete_views_30s'] ?? 0), // Sử dụng complete views 30s
-                        'video_plays_at_50' => (int) ($insight['post_video_views_10s'] ?? 0), // Sử dụng views 10s
-                        'video_plays_at_75' => (int) ($insight['post_video_views_paid'] ?? 0), // Sử dụng paid views
-                        'video_plays_at_100' => (int) ($insight['post_video_views_organic'] ?? 0), // Sử dụng organic views
-                        'video_p25_watched_actions' => (int) ($insight['post_video_views_10s'] ?? 0), // Sử dụng views 10s
-                        'video_p50_watched_actions' => (int) ($insight['post_video_complete_views_30s'] ?? 0), // Sử dụng complete views
-                        'video_p75_watched_actions' => (int) ($insight['post_video_views_paid'] ?? 0), // Sử dụng paid views
-                        'video_p95_watched_actions' => (int) ($insight['post_video_views_organic'] ?? 0), // Sử dụng organic views
-                        'video_p100_watched_actions' => (int) ($insight['post_video_views_unique'] ?? 0), // Sử dụng unique views
-                        'thruplays' => (int) ($insight['post_video_complete_views_30s'] ?? 0), // Sử dụng complete views 30s
+                            'video_views' => (int) ($insight['video_views'] ?? 0), // Sử dụng đúng field video_views
+                        'video_view_time' => (int) ($insight['video_view_time'] ?? 0), // Sử dụng đúng field video_view_time
+                        'video_avg_time_watched' => (float) ($insight['video_avg_time_watched_actions'] ?? 0), // Sử dụng đúng field video_avg_time_watched_actions
+                        'video_plays' => (int) ($insight['video_play_actions'] ?? 0), // Sử dụng đúng field video_play_actions
+                        'video_plays_at_25' => (int) ($insight['video_p25_watched_actions'] ?? 0), // Sử dụng video_p25_watched_actions
+                        'video_plays_at_50' => (int) ($insight['video_p50_watched_actions'] ?? 0), // Sử dụng video_p50_watched_actions
+                        'video_plays_at_75' => (int) ($insight['video_p75_watched_actions'] ?? 0), // Sử dụng video_p75_watched_actions
+                        'video_plays_at_100' => (int) ($insight['video_p100_watched_actions'] ?? 0), // Sử dụng video_p100_watched_actions
+                        'video_p25_watched_actions' => (int) ($insight['video_p25_watched_actions'] ?? 0), // Sử dụng đúng field video_p25_watched_actions
+                        'video_p50_watched_actions' => (int) ($insight['video_p50_watched_actions'] ?? 0), // Sử dụng đúng field video_p50_watched_actions
+                        'video_p75_watched_actions' => (int) ($insight['video_p75_watched_actions'] ?? 0), // Sử dụng đúng field video_p75_watched_actions
+                        'video_p95_watched_actions' => (int) ($insight['video_p95_watched_actions'] ?? 0), // Sử dụng đúng field video_p95_watched_actions
+                        'video_p100_watched_actions' => (int) ($insight['video_p100_watched_actions'] ?? 0), // Sử dụng đúng field video_p100_watched_actions
+                        'thruplays' => (int) ($insight['video_thruplay_watched_actions'] ?? 0), // Sử dụng đúng field video_thruplay_watched_actions
                         'engagement_rate' => (float) ($insight['engagement_rate'] ?? 0),
                         'ctr' => (float) ($insight['ctr'] ?? 0),
                         'cpm' => (float) ($insight['cpm'] ?? 0),
@@ -1524,9 +1524,56 @@ class FacebookAdsSyncService
     /**
      * Trích xuất Page ID từ post data
      */
-    private function extractPageId(FacebookAd $facebookAd, array $postData): ?string
+    private function extractPageId(FacebookAd $facebookAd, array $creativeData): ?string
     {
-        return $postData['page_id'] ?? null;
+        try {
+            $pageId = null;
+            $storyId = null;
+
+            // Kiểm tra object_story_id
+            if (isset($creativeData['object_story_id'])) {
+                $storyId = $creativeData['object_story_id'];
+                Log::info("Found object_story_id", ['story_id' => $storyId]);
+            } elseif (isset($creativeData['effective_object_story_id'])) {
+                $storyId = $creativeData['effective_object_story_id'];
+                Log::info("Found effective_object_story_id", ['story_id' => $storyId]);
+            }
+
+            // Parse story_id để lấy page_id
+            if ($storyId && strpos($storyId, '_') !== false) {
+                $parts = explode('_', $storyId);
+                if (count($parts) >= 2) {
+                    $pageId = $parts[0];
+                    Log::info("Parsed story_id for page_id", ['page_id' => $pageId]);
+                }
+            }
+
+            // Nếu không tìm thấy từ story_id, kiểm tra object_story_spec
+            if (!$pageId && isset($creativeData['object_story_spec'])) {
+                $spec = $creativeData['object_story_spec'];
+                Log::info("Found object_story_spec", ['spec' => $spec]);
+                
+                if (isset($spec['page_id'])) {
+                    $pageId = $spec['page_id'];
+                    Log::info("Found page_id from object_story_spec", ['page_id' => $pageId]);
+                }
+            }
+
+            // Fallback: kiểm tra postData nếu có
+            if (!$pageId && isset($creativeData['page_id'])) {
+                $pageId = $creativeData['page_id'];
+                Log::info("Found page_id from creativeData", ['page_id' => $pageId]);
+            }
+
+            return $pageId;
+            
+        } catch (\Exception $e) {
+            Log::error("Lỗi khi extract page_id", [
+                'ad_id' => $facebookAd->id,
+                'error' => $e->getMessage()
+            ]);
+            return null;
+        }
     }
 
     /**
@@ -2110,20 +2157,20 @@ class FacebookAdsSyncService
                             
                             // Video metrics chính từ API
                             'video_views' => (int) ($insight['video_views'] ?? 0),
-                            'video_plays' => (int) ($insight['video_plays'] ?? 0),
-                            'video_plays_at_25' => (int) ($insight['video_plays_at_25'] ?? 0),
-                            'video_plays_at_50' => (int) ($insight['video_plays_at_50'] ?? 0),
-                            'video_plays_at_75' => (int) ($insight['video_plays_at_75'] ?? 0),
-                            'video_plays_at_100' => (int) ($insight['video_plays_at_100'] ?? 0),
+                            'video_plays' => (int) ($insight['video_play_actions'] ?? 0), // Sử dụng đúng field video_play_actions
+                            'video_plays_at_25' => (int) ($insight['video_p25_watched_actions'] ?? 0), // Sử dụng video_p25_watched_actions
+                            'video_plays_at_50' => (int) ($insight['video_p50_watched_actions'] ?? 0), // Sử dụng video_p50_watched_actions
+                            'video_plays_at_75' => (int) ($insight['video_p75_watched_actions'] ?? 0), // Sử dụng video_p75_watched_actions
+                            'video_plays_at_100' => (int) ($insight['video_p100_watched_actions'] ?? 0), // Sử dụng video_p100_watched_actions
                             'video_p25_watched_actions' => (int) ($insight['video_p25_watched_actions'] ?? 0),
                             'video_p50_watched_actions' => (int) ($insight['video_p50_watched_actions'] ?? 0),
                             'video_p75_watched_actions' => (int) ($insight['video_p75_watched_actions'] ?? 0),
                             'video_p95_watched_actions' => (int) ($insight['video_p95_watched_actions'] ?? 0),
                             'video_p100_watched_actions' => (int) ($insight['video_p100_watched_actions'] ?? 0),
-                            'thruplays' => (int) ($insight['thruplays'] ?? 0),
-                            'video_avg_time_watched' => (float) ($insight['video_avg_time_watched'] ?? 0),
-                            'video_view_time' => (int) ($insight['video_view_time'] ?? 0),
-                            'video_30_sec_watched' => (int) ($insight['video_30_sec_watched'] ?? 0),
+                            'thruplays' => (int) ($insight['video_thruplay_watched_actions'] ?? 0), // Sử dụng đúng field video_thruplay_watched_actions
+                            'video_avg_time_watched' => (float) ($insight['video_avg_time_watched_actions'] ?? 0), // Sử dụng đúng field video_avg_time_watched_actions
+                            'video_view_time' => (int) ($insight['video_view_time'] ?? 0), // Sử dụng đúng field video_view_time
+                            'video_30_sec_watched' => (int) ($insight['video_30_sec_watched_actions'] ?? 0), // Sử dụng đúng field video_30_sec_watched_actions
                         ]
                     );
                 }

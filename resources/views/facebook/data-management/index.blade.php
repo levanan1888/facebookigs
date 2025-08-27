@@ -7,25 +7,29 @@
     </div>
 
     <!-- Page Selection -->
-    <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
-        <div class="flex items-center space-x-4">
-            <label for="page-select" class="text-sm font-medium text-gray-700 min-w-[120px]">
-                Chọn Trang Facebook:
-            </label>
-            <select id="page-select" name="page_id" class="flex-1 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                <option value="">-- Chọn trang --</option>
-                @foreach($data['pages'] as $page)
-                    <option value="{{ $page->id }}" 
-                            {{ $filters['page_id'] == $page->id ? 'selected' : '' }}
-                            data-fan-count="{{ $page->fan_count }}"
-                            data-category="{{ $page->category }}">
-                        {{ $page->name }} 
-                        ({{ number_format($page->fan_count) }} fan{{ $page->ads_count > 0 ? ', ' . $page->ads_count . ' quảng cáo' : '' }})
-                    </option>
-                @endforeach
-            </select>
+
+
+    <form id="page-select-form" method="GET" action="{{ route('facebook.data-management.index') }}">
+        <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+            <div class="flex items-center space-x-4">
+                <label for="page-select" class="text-sm font-medium text-gray-700 min-w-[120px]">
+                    Chọn Trang Facebook:
+                </label>
+                <select id="page-select" name="page_id" class="flex-1 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                    <option value="">-- Chọn trang --</option>
+                    @foreach($data['pages'] as $page)
+                        <option value="{{ $page->id }}" 
+                                {{ ($filters['page_id'] ?? '') == $page->id ? 'selected' : '' }}
+                                data-fan-count="{{ $page->fan_count }}"
+                                data-category="{{ $page->category }}">
+                            {{ $page->name }} 
+                            ({{ number_format($page->fan_count) }} fan{{ $page->ads_count > 0 ? ', ' . $page->ads_count . ' quảng cáo' : '' }})
+                        </option>
+                    @endforeach
+                </select>
+            </div>
         </div>
-    </div>
+    </form>
 
     @if($data['selected_page'])
         <!-- Page Overview -->
@@ -62,8 +66,8 @@
         <!-- Filters -->
         <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
             <h3 class="text-lg font-medium text-gray-900 mb-4">Bộ lọc</h3>
-            <form id="filter-form" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <input type="hidden" name="page_id" value="{{ $filters['page_id'] }}">
+            <form id="filter-form" method="GET" action="{{ route('facebook.data-management.index') }}" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <input type="hidden" name="page_id" value="{{ $filters['page_id'] ?? '' }}">
                 
                 <div>
                     <label for="date_from" class="block text-sm font-medium text-gray-700 mb-1">Từ ngày</label>
@@ -157,7 +161,7 @@
                                     </div>
                                     
                                     <!-- Ad Insights Summary -->
-                                    @if($post->ads->count() > 0)
+                                    @if($post->ads && $post->ads->count() > 0)
                                         <div class="mt-3 p-3 bg-gray-50 rounded-lg">
                                             <div class="text-sm font-medium text-gray-700 mb-2">Thống kê quảng cáo:</div>
                                             <div class="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
@@ -314,21 +318,196 @@
     @endif
 </div>
 
+<!-- Content Area for AJAX -->
+<div id="content-area">
+    <!-- Content will be loaded here via AJAX -->
+</div>
+
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const pageSelect = document.getElementById('page-select');
     const filterForm = document.getElementById('filter-form');
     const clearFiltersBtn = document.getElementById('clear-filters');
+    const contentArea = document.getElementById('content-area');
     
-    // Auto-submit form when page changes
-    pageSelect.addEventListener('change', function() {
-        if (this.value) {
-            filterForm.submit();
+    // Load page data via AJAX
+    function loadPageData(pageId, filters = {}) {
+        if (!pageId) return;
+        
+        // Show loading
+        if (contentArea) {
+            contentArea.innerHTML = '<div class="text-center py-8"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div><p class="mt-2 text-sm text-gray-600">Đang tải dữ liệu...</p></div>';
         }
-    });
+        
+        // Build query string
+        const params = new URLSearchParams({ page_id: pageId, ...filters });
+        
+        // Make AJAX request
+        fetch(`{{ route('facebook.data-management.page-data') }}?${params}`)
+            .then(response => response.json())
+            .then(data => {
+                if (contentArea) {
+                    // Update URL without reload
+                    const url = new URL(window.location);
+                    url.searchParams.set('page_id', pageId);
+                    Object.keys(filters).forEach(key => {
+                        if (filters[key]) {
+                            url.searchParams.set(key, filters[key]);
+                        } else {
+                            url.searchParams.delete(key);
+                        }
+                    });
+                    window.history.pushState({}, '', url);
+                    
+                    // Render content
+                    renderPageContent(data);
+                }
+            })
+            .catch(error => {
+                console.error('Error loading page data:', error);
+                if (contentArea) {
+                    contentArea.innerHTML = '<div class="text-center py-8 text-red-600">Lỗi khi tải dữ liệu. Vui lòng thử lại.</div>';
+                }
+            });
+    }
+    
+    // Render page content
+    function renderPageContent(data) {
+        if (!contentArea) return;
+        
+        let html = '';
+        
+        // Page Overview
+        if (data.posts && data.posts.length > 0) {
+            html += `
+                <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-xl font-semibold text-gray-900">Dữ liệu trang</h2>
+                    </div>
+                    
+                    <!-- Quick Stats -->
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div class="text-center p-4 bg-gray-50 rounded-lg">
+                            <div class="text-2xl font-bold text-blue-600">${data.posts.length}</div>
+                            <div class="text-sm text-gray-600">Bài viết</div>
+                        </div>
+                        <div class="text-center p-4 bg-gray-50 rounded-lg">
+                            <div class="text-2xl font-bold text-green-600">${data.spending_stats?.summary?.total_spend || 0}</div>
+                            <div class="text-sm text-gray-600">Tổng chi phí (VND)</div>
+                        </div>
+                        <div class="text-center p-4 bg-gray-50 rounded-lg">
+                            <div class="text-2xl font-bold text-purple-600">${data.spending_stats?.summary?.total_impressions || 0}</div>
+                            <div class="text-sm text-gray-600">Tổng hiển thị</div>
+                        </div>
+                        <div class="text-center p-4 bg-gray-50 rounded-lg">
+                            <div class="text-2xl font-bold text-orange-600">${data.spending_stats?.summary?.total_clicks || 0}</div>
+                            <div class="text-sm text-gray-600">Tổng click</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Posts List
+            html += `
+                <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+                    <h3 class="text-lg font-medium text-gray-900 mb-4">Danh sách bài viết (${data.posts.length})</h3>
+                    <div class="space-y-4">
+            `;
+            
+            data.posts.forEach(post => {
+                html += `
+                    <div class="border border-gray-200 rounded-lg p-4 hover:bg-gray-50">
+                        <div class="flex items-start justify-between">
+                            <div class="flex-1">
+                                <div class="flex items-center space-x-2 mb-2">
+                                    <span class="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">
+                                        ${post.type || 'Post'}
+                                    </span>
+                                    <span class="text-sm text-gray-500">
+                                        ${post.created_time || 'N/A'}
+                                    </span>
+                                </div>
+                                
+                                <p class="text-gray-900 mb-3">
+                                    ${post.message ? post.message.substring(0, 200) + (post.message.length > 200 ? '...' : '') : 'Không có nội dung'}
+                                </p>
+                                
+                                <!-- Post Stats -->
+                                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                                    <div class="text-center">
+                                        <div class="font-semibold text-blue-600">${post.likes_count || 0}</div>
+                                        <div class="text-gray-600">Lượt thích</div>
+                                    </div>
+                                    <div class="text-center">
+                                        <div class="font-semibold text-green-600">${post.shares_count || 0}</div>
+                                        <div class="text-gray-600">Chia sẻ</div>
+                                    </div>
+                                    <div class="text-center">
+                                        <div class="font-semibold text-purple-600">${post.comments_count || 0}</div>
+                                        <div class="text-gray-600">Bình luận</div>
+                                    </div>
+                                    <div class="text-center">
+                                        <div class="font-semibold text-orange-600">${post.reactions_count || 0}</div>
+                                        <div class="text-gray-600">Phản ứng</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            html += `
+                    </div>
+                </div>
+            `;
+        } else {
+            html += `
+                <div class="text-center py-8">
+                    <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                    </svg>
+                    <h3 class="mt-2 text-sm font-medium text-gray-900">Không có bài viết nào</h3>
+                    <p class="mt-1 text-sm text-gray-500">Không tìm thấy bài viết nào phù hợp với bộ lọc hiện tại.</p>
+                </div>
+            `;
+        }
+        
+        contentArea.innerHTML = html;
+    }
+    
+    // Auto-load data when page changes
+    if (pageSelect) {
+        pageSelect.addEventListener('change', function() {
+            if (this.value) {
+                loadPageData(this.value);
+            }
+        });
+    }
+    
+    // Filter form submission
+    if (filterForm) {
+        filterForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            const filters = {};
+            
+            for (let [key, value] of formData.entries()) {
+                if (value) {
+                    filters[key] = value;
+                }
+            }
+            
+            const pageId = pageSelect ? pageSelect.value : filters.page_id;
+            if (pageId) {
+                loadPageData(pageId, filters);
+            }
+        });
+    }
     
     // Clear filters
-    if (clearFiltersBtn) {
+    if (clearFiltersBtn && filterForm) {
         clearFiltersBtn.addEventListener('click', function() {
             const inputs = filterForm.querySelectorAll('input, select');
             inputs.forEach(input => {
@@ -336,7 +515,11 @@ document.addEventListener('DOMContentLoaded', function() {
                     input.value = '';
                 }
             });
-            filterForm.submit();
+            
+            const pageId = pageSelect ? pageSelect.value : null;
+            if (pageId) {
+                loadPageData(pageId);
+            }
         });
     }
     

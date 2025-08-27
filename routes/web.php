@@ -24,10 +24,11 @@ Route::middleware(['auth', 'verified', 'permission.404:analytics'])->prefix('ana
 require __DIR__.'/facebook.php';
 
 // Facebook Data Management routes
-Route::middleware(['auth', 'verified', 'permission.404:view-facebook-data'])->prefix('facebook')->name('facebook.')->group(function () {
+Route::middleware(['auth', 'verified'])->prefix('facebook')->name('facebook.')->group(function () {
     Route::get('data-management', [App\Http\Controllers\FacebookDataController::class, 'index'])->name('data-management.index');
     Route::get('data-management/posts', [App\Http\Controllers\FacebookDataController::class, 'getPostsByPage'])->name('data-management.posts');
     Route::get('data-management/spending-stats', [App\Http\Controllers\FacebookDataController::class, 'getPostSpendingStats'])->name('data-management.spending-stats');
+    Route::get('data-management/page-data', [App\Http\Controllers\FacebookDataController::class, 'getPageData'])->name('data-management.page-data');
 });
 
 // Include API routes

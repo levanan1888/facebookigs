@@ -25,6 +25,16 @@ class FacebookDataController extends Controller
     {
         $filters = $request->validated();
         
+        // Đảm bảo tất cả keys đều có, ngay cả khi null
+        $filters = array_merge([
+            'page_id' => null,
+            'date_from' => null,
+            'date_to' => null,
+            'post_type' => null,
+            'status' => null,
+            'search' => null,
+        ], $filters);
+        
         $data = $this->facebookDataService->getFacebookData($filters);
         
         return view('facebook.data-management.index', compact('data', 'filters'));
@@ -36,11 +46,27 @@ class FacebookDataController extends Controller
     public function getPostsByPage(Request $request)
     {
         $pageId = $request->input('page_id');
-        $filters = $request->only(['date_from', 'date_to', 'post_type', 'status']);
+        $filters = $request->only(['date_from', 'date_to', 'post_type', 'status', 'search']);
         
         $posts = $this->facebookDataService->getPostsByPage($pageId, $filters);
         
         return FacebookPostResource::collection($posts);
+    }
+
+    /**
+     * API endpoint để lấy data cho page (posts + stats)
+     */
+    public function getPageData(Request $request)
+    {
+        $pageId = $request->input('page_id');
+        $filters = $request->only(['date_from', 'date_to', 'post_type', 'status', 'search']);
+        
+        $data = [
+            'posts' => $this->facebookDataService->getPostsByPage($pageId, $filters),
+            'spending_stats' => $this->facebookDataService->getPostSpendingStats($pageId, $filters['date_from'] ?? null, $filters['date_to'] ?? null),
+        ];
+        
+        return response()->json($data);
     }
 
     /**

@@ -49,3 +49,4 @@ class CheckDatabaseSchema extends Command
         }
     }
 }
+

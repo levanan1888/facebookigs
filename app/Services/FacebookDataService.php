@@ -44,13 +44,16 @@ class FacebookDataService
      */
     public function getAvailablePages(): Collection
     {
-        return FacebookAd::select('page_id as id')
+        $pages = FacebookAd::select('page_id as id')
             ->whereNotNull('page_id')
             ->whereHas('insights')
             ->groupBy('page_id')
             ->orderBy('page_id')
-            ->get()
-            ->map(function ($ad) {
+            ->get();
+            
+        // Tạo Eloquent Collection thay vì Support Collection
+        return new \Illuminate\Database\Eloquent\Collection(
+            $pages->map(function ($ad) {
                 // Đếm số insights cho page này
                 $insightsCount = FacebookAdInsight::join('facebook_ads', 'facebook_ad_insights.ad_id', '=', 'facebook_ads.id')
                     ->where('facebook_ads.page_id', $ad->id)
@@ -63,7 +66,8 @@ class FacebookDataService
                     'fan_count' => 0,
                     'ads_count' => $insightsCount
                 ];
-            });
+            })
+        );
     }
 
     /**
