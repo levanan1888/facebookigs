@@ -8,6 +8,10 @@ Route::middleware(['auth', 'verified'])->prefix('facebook')->name('facebook.')->
         ->middleware(['permission.404:facebook.overview'])
         ->name('overview');
 
+    Route::match(['GET','POST'], 'overview/ai-summary', [App\Http\Controllers\FacebookDashboardController::class, 'overviewAiSummary'])
+        ->middleware(['permission.404:facebook.overview'])
+        ->name('overview.ai-summary');
+
     Route::get('hierarchy', [App\Http\Controllers\FacebookDashboardController::class, 'hierarchy'])
         ->middleware(['permission.404:facebook.hierarchy'])
         ->name('hierarchy');
@@ -47,4 +51,34 @@ Route::middleware(['auth', 'verified', 'permission.404:facebook.sync'])->group(f
     
     Route::post('facebook/sync/reset', [App\Http\Controllers\FacebookSyncController::class, 'resetSync'])
         ->name('facebook.sync.reset');
+});
+
+// Facebook Data Management routes
+Route::middleware(['auth', 'verified'])->prefix('facebook')->name('facebook.')->group(function () {
+    Route::get('data-management', [App\Http\Controllers\FacebookDataController::class, 'index'])
+        ->name('data-management.index');
+    
+    Route::get('data-management/page-data', [App\Http\Controllers\FacebookDataController::class, 'getPageData'])
+        ->name('data-management.page-data');
+    
+    Route::get('data-management/posts', [App\Http\Controllers\FacebookDataController::class, 'getPostsByPage'])
+        ->name('data-management.posts');
+    
+    Route::get('data-management/spending-stats', [App\Http\Controllers\FacebookDataController::class, 'getPostSpendingStats'])
+        ->name('data-management.spending-stats');
+    
+    Route::get('data-management/ad-campaigns', [App\Http\Controllers\FacebookDataController::class, 'getAdCampaigns'])
+        ->name('data-management.ad-campaigns');
+    
+    Route::get('data-management/ad-breakdowns', [App\Http\Controllers\FacebookDataController::class, 'getAdBreakdowns'])
+        ->name('data-management.ad-breakdowns');
+    
+    Route::get('data-management/ad-insights', [App\Http\Controllers\FacebookDataController::class, 'getAdInsights'])
+        ->name('data-management.ad-insights');
+    
+    Route::post('data-management/ai-summary', [App\Http\Controllers\FacebookDataController::class, 'getAiSummary'])
+        ->name('data-management.ai-summary');
+    
+    Route::get('data-management/post/{postId}/page/{pageId}', [App\Http\Controllers\FacebookDataController::class, 'showPostDetail'])
+        ->name('data-management.post-detail');
 });

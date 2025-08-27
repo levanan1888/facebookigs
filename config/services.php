@@ -56,4 +56,8 @@ return [
         'ads_access_token' => env('TIKTOK_ADS_ACCESS_TOKEN'),
     ],
 
+    'gemini' => [
+        'api_key' => env('GEMINI_API_KEY'),
+    ],
+
 ];

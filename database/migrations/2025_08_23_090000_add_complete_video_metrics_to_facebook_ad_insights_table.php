@@ -12,7 +12,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('facebook_ad_insights', function (Blueprint $table) {
-a            // Thêm các fields video metrics còn thiếu theo docs Facebook
+            // Thêm các fields video metrics còn thiếu theo docs Facebook
             if (!Schema::hasColumn('facebook_ad_insights', 'video_plays_at_25_percent')) {
                 $table->integer('video_plays_at_25_percent')->nullable()->after('video_plays');
             }

@@ -563,14 +563,15 @@ class FacebookAdsSyncService
                         'hide_all_clicks' => (int) ($insight['hide_all_clicks'] ?? 0),
                         'unlikes' => (int) ($insight['unlikes'] ?? 0),
                         'negative_feedback' => (int) ($insight['negative_feedback'] ?? 0),
-                            'video_views' => (int) ($insight['video_views'] ?? 0), // Sử dụng đúng field video_views
-                        'video_view_time' => (int) ($insight['video_view_time'] ?? 0), // Sử dụng đúng field video_view_time
-                        'video_avg_time_watched' => (float) ($insight['video_avg_time_watched_actions'] ?? 0), // Sử dụng đúng field video_avg_time_watched_actions
-                        'video_plays' => (int) ($insight['video_play_actions'] ?? 0), // Sử dụng đúng field video_play_actions
-                        'video_plays_at_25' => (int) ($insight['video_p25_watched_actions'] ?? 0), // Sử dụng video_p25_watched_actions
-                        'video_plays_at_50' => (int) ($insight['video_p50_watched_actions'] ?? 0), // Sử dụng video_p50_watched_actions
-                        'video_plays_at_75' => (int) ($insight['video_p75_watched_actions'] ?? 0), // Sử dụng video_p75_watched_actions
-                        'video_plays_at_100' => (int) ($insight['video_p100_watched_actions'] ?? 0), // Sử dụng video_p100_watched_actions
+                        'video_views' => $this->extractVideoMetricValue($insight, 'video_play_actions'),
+                        // Không có field video_watch_time hợp lệ trong Ads Insights; giữ theo fallback cũ nếu có
+                        'video_view_time' => (int) ($insight['video_view_time'] ?? 0),
+                        'video_avg_time_watched' => $this->extractVideoMetricValueDecimal($insight, 'video_avg_time_watched_actions'),
+                        'video_plays' => $this->extractVideoMetricValue($insight, 'video_play_actions'),
+                        'video_plays_at_25' => $this->extractVideoMetricValue($insight, 'video_p25_watched_actions'),
+                        'video_plays_at_50' => $this->extractVideoMetricValue($insight, 'video_p50_watched_actions'),
+                        'video_plays_at_75' => $this->extractVideoMetricValue($insight, 'video_p75_watched_actions'),
+                        'video_plays_at_100' => $this->extractVideoMetricValue($insight, 'video_p100_watched_actions'),
                         'video_p25_watched_actions' => (int) ($insight['video_p25_watched_actions'] ?? 0), // Sử dụng đúng field video_p25_watched_actions
                         'video_p50_watched_actions' => (int) ($insight['video_p50_watched_actions'] ?? 0), // Sử dụng đúng field video_p50_watched_actions
                         'video_p75_watched_actions' => (int) ($insight['video_p75_watched_actions'] ?? 0), // Sử dụng đúng field video_p75_watched_actions
@@ -600,6 +601,63 @@ class FacebookAdsSyncService
             ]);
             throw $e;
         }
+    }
+
+    /**
+     * Extract video metric value from Facebook API response
+     * Facebook returns video metrics as array with action_type and value
+     */
+    private function extractVideoMetricValue(array $insight, string $field): int
+    {
+        if (!isset($insight[$field])) {
+            return 0;
+        }
+        
+        $value = $insight[$field];
+        
+        // If it's already a number, return it
+        if (is_numeric($value)) {
+            return (int) $value;
+        }
+        
+        // If it's an array with action_type and value structure
+        if (is_array($value) && !empty($value)) {
+            foreach ($value as $action) {
+                if (isset($action['action_type']) && isset($action['value'])) {
+                    return (int) $action['value'];
+                }
+            }
+        }
+        
+        return 0;
+    }
+
+    /**
+     * Extract video metric value for decimal fields (like video_avg_time_watched)
+     */
+    private function extractVideoMetricValueDecimal(array $insight, string $field): float
+    {
+        if (!isset($insight[$field])) {
+            return 0.0;
+        }
+        
+        $value = $insight[$field];
+        
+        // If it's already a number, return it
+        if (is_numeric($value)) {
+            return (float) $value;
+        }
+        
+        // If it's an array with action_type and value structure
+        if (is_array($value) && !empty($value)) {
+            foreach ($value as $action) {
+                if (isset($action['action_type']) && isset($action['value'])) {
+                    return (float) $action['value'];
+                }
+            }
+        }
+        
+        return 0.0;
     }
 
     /**
@@ -738,6 +796,11 @@ class FacebookAdsSyncService
     }
     
     /**
+     * Trích xuất breakdown value một cách thông minh từ row data
+     */
+
+    
+    /**
      * Lưu breakdown data vào database
      */
     private function saveBreakdownData(FacebookAd $facebookAd, array $breakdownData, string $breakdownType, array &$result): void
@@ -752,18 +815,22 @@ class FacebookAdsSyncService
 
         if (isset($breakdownData['data']) && !empty($breakdownData['data'])) {
             foreach ($breakdownData['data'] as $row) {
-                \App\Models\FacebookBreakdown::updateOrCreate(
-                    [
-                        'ad_insight_id' => $this->lastProcessedAdInsightId,
-                        'breakdown_type' => $breakdownType,
-                        'breakdown_value' => is_array($row[$breakdownType] ?? null)
-                            ? (string)($row[$breakdownType]['id'] ?? $row[$breakdownType]['name'] ?? json_encode($row[$breakdownType]))
-                            : (string)($row[$breakdownType] ?? 'unknown'),
-                    ],
-                    [
-                        'metrics' => json_encode($row),
-                    ]
-                );
+                // Sử dụng method extractBreakdownValue đã được cải thiện
+                $breakdownValue = $this->extractBreakdownValue($row, $breakdownType);
+                
+                // Chỉ lưu nếu có giá trị hợp lệ
+                if ($breakdownValue !== null) {
+                    \App\Models\FacebookBreakdown::updateOrCreate(
+                        [
+                            'ad_insight_id' => $this->lastProcessedAdInsightId,
+                            'breakdown_type' => $breakdownType,
+                            'breakdown_value' => $breakdownValue,
+                        ],
+                        [
+                            'metrics' => json_encode($row),
+                        ]
+                    );
+                }
             }
             $result['breakdowns']++;
         }
@@ -784,20 +851,117 @@ class FacebookAdsSyncService
 
         if (isset($breakdownData['data']) && !empty($breakdownData['data'])) {
             foreach ($breakdownData['data'] as $row) {
-                \App\Models\FacebookBreakdown::updateOrCreate(
-                    [
-                        'ad_insight_id' => $this->lastProcessedAdInsightId,
-                        'breakdown_type' => $breakdownType,
-                        'breakdown_value' => is_array($row[$breakdownType] ?? null)
-                            ? (string)($row[$breakdownType]['id'] ?? $row[$breakdownType]['name'] ?? json_encode($row[$breakdownType]))
-                            : (string)($row[$breakdownType] ?? 'unknown'),
-                    ],
-                    [
-                        'metrics' => json_encode($row),
-                    ]
-                );
+                // Với action breakdowns, cần xử lý đặc biệt
+                if (strpos($breakdownType, 'action_') === 0) {
+                    $this->processActionBreakdownRow($row, $breakdownType);
+                } else {
+                    // Sử dụng method extractBreakdownValue đã được cải thiện cho non-action breakdowns
+                    $breakdownValue = $this->extractBreakdownValue($row, $breakdownType);
+                    
+                    // Chỉ lưu nếu có giá trị hợp lệ
+                    if ($breakdownValue !== null) {
+                        \App\Models\FacebookBreakdown::updateOrCreate(
+                            [
+                                'ad_insight_id' => $this->lastProcessedAdInsightId,
+                                'breakdown_type' => $breakdownType,
+                                'breakdown_value' => $breakdownValue,
+                            ],
+                            [
+                                'metrics' => json_encode($row),
+                            ]
+                        );
+                    }
+                }
             }
             $result['breakdowns']++;
+        }
+    }
+
+    /**
+     * Xử lý action breakdown row - breakdown values nằm trong actions array
+     */
+    private function processActionBreakdownRow(array $row, string $breakdownType): void
+    {
+        // Kiểm tra có actions array không
+        if (!isset($row['actions']) || !is_array($row['actions'])) {
+            return;
+        }
+
+        // Tạo map để group theo breakdown value
+        $breakdownGroups = [];
+
+        foreach ($row['actions'] as $action) {
+            // Lấy breakdown value từ action
+            $breakdownValue = $this->extractActionBreakdownValue($action, $breakdownType);
+            
+            if ($breakdownValue === null) {
+                continue; // Bỏ qua action không có breakdown value
+            }
+
+            // Group actions theo breakdown value
+            if (!isset($breakdownGroups[$breakdownValue])) {
+                $breakdownGroups[$breakdownValue] = [
+                    'breakdown_value' => $breakdownValue,
+                    'actions' => [],
+                    'metrics' => $row // Copy basic metrics
+                ];
+            }
+
+            $breakdownGroups[$breakdownValue]['actions'][] = $action;
+        }
+
+        // Lưu từng breakdown group
+        foreach ($breakdownGroups as $group) {
+            \App\Models\FacebookBreakdown::updateOrCreate(
+                [
+                    'ad_insight_id' => $this->lastProcessedAdInsightId,
+                    'breakdown_type' => $breakdownType,
+                    'breakdown_value' => $group['breakdown_value'],
+                ],
+                [
+                    'metrics' => json_encode($group),
+                ]
+            );
+        }
+    }
+
+    /**
+     * Extract breakdown value từ action item
+     */
+    private function extractActionBreakdownValue(array $action, string $breakdownType): ?string
+    {
+        switch ($breakdownType) {
+            case 'action_device':
+                return $action['action_device'] ?? null;
+            
+            case 'action_destination':
+                return $action['action_destination'] ?? null;
+            
+            case 'action_target_id':
+                return $action['action_target_id'] ?? null;
+            
+            case 'action_reaction':
+                return $action['action_reaction'] ?? null;
+            
+            case 'action_video_sound':
+                return $action['action_video_sound'] ?? null;
+            
+            case 'action_video_type':
+                return $action['action_video_type'] ?? null;
+            
+            case 'action_carousel_card_id':
+                return $action['action_carousel_card_id'] ?? null;
+            
+            case 'action_carousel_card_name':
+                return $action['action_carousel_card_name'] ?? null;
+            
+            case 'action_canvas_component_name':
+                return $action['action_canvas_component_name'] ?? null;
+            
+            default:
+                // Tìm kiếm trường có tên tương ứng
+                $fieldName = str_replace('action_', '', $breakdownType);
+                return $action[$fieldName] ?? null;
         }
     }
     
@@ -816,18 +980,22 @@ class FacebookAdsSyncService
 
         if (isset($breakdownData['data']) && !empty($breakdownData['data'])) {
             foreach ($breakdownData['data'] as $row) {
-                \App\Models\FacebookBreakdown::updateOrCreate(
-                    [
-                        'ad_insight_id' => $this->lastProcessedAdInsightId,
-                        'breakdown_type' => $breakdownType,
-                        'breakdown_value' => is_array($row[$breakdownType] ?? null)
-                            ? (string)($row[$breakdownType]['id'] ?? $row[$breakdownType]['name'] ?? json_encode($row[$breakdownType]))
-                            : (string)($row[$breakdownType] ?? 'unknown'),
-                    ],
-                    [
-                        'metrics' => json_encode($row),
-                    ]
-                );
+                // Sử dụng method extractBreakdownValue đã được cải thiện
+                $breakdownValue = $this->extractBreakdownValue($row, $breakdownType);
+                
+                // Chỉ lưu nếu có giá trị hợp lệ
+                if ($breakdownValue !== null) {
+                    \App\Models\FacebookBreakdown::updateOrCreate(
+                        [
+                            'ad_insight_id' => $this->lastProcessedAdInsightId,
+                            'breakdown_type' => $breakdownType,
+                            'breakdown_value' => $breakdownValue,
+                        ],
+                        [
+                            'metrics' => json_encode($row),
+                        ]
+                    );
+                }
             }
             $result['breakdowns']++;
         }
@@ -839,7 +1007,71 @@ class FacebookAdsSyncService
     private function processBasicAdInsights(array $adInsights, FacebookAd $facebookAd, array &$result): void
     {
         try {
-            if (!isset($adInsights['data']) || empty($adInsights['data'])) {
+            if (!isset($adInsights['data'])) {
+                Log::warning('Không có basic insights data cho Ad', [
+                    'ad_id' => $facebookAd->id,
+                    'adInsights' => $adInsights
+                ]);
+                return;
+            }
+            
+            // Nếu data rỗng, vẫn tạo record với giá trị 0
+            if (empty($adInsights['data'])) {
+                Log::info('Basic insights data rỗng, tạo record với giá trị 0', [
+                    'ad_id' => $facebookAd->id
+                ]);
+                
+                // Tạo record với giá trị 0
+                $date = now()->toDateString();
+                $postIdForSave = $facebookAd->post_id ?? null;
+                $pageIdForSave = $facebookAd->page_id ?? null;
+                
+                FacebookAdInsight::updateOrCreate(
+                    [
+                        'ad_id' => $facebookAd->id,
+                        'date' => $date,
+                    ],
+                    [
+                        'spend' => 0,
+                        'reach' => 0,
+                        'impressions' => 0,
+                        'clicks' => 0,
+                        'unique_clicks' => 0,
+                        'ctr' => 0,
+                        'unique_ctr' => 0,
+                        'cpc' => 0,
+                        'cpm' => 0,
+                        'frequency' => 0,
+                        'conversions' => 0,
+                        'conversion_values' => 0,
+                        'cost_per_conversion' => 0,
+                        'purchase_roas' => 0,
+                        'outbound_clicks' => 0,
+                        'unique_outbound_clicks' => 0,
+                        'inline_link_clicks' => 0,
+                        'unique_inline_link_clicks' => 0,
+                        'website_clicks' => 0,
+                        'actions' => null,
+                        'action_values' => null,
+                        'cost_per_action_type' => null,
+                        'cost_per_unique_action_type' => null,
+                        'video_views' => 0,
+                        'video_plays' => 0,
+                        'video_avg_time_watched' => 0,
+                        'video_p25_watched_actions' => 0,
+                        'video_p50_watched_actions' => 0,
+                        'video_p75_watched_actions' => 0,
+                        'video_p95_watched_actions' => 0,
+                        'video_p100_watched_actions' => 0,
+                        'thruplays' => 0,
+                        'video_30_sec_watched' => 0,
+                        'video_view_time' => 0,
+                        'post_id' => $postIdForSave,
+                        'page_id' => $pageIdForSave,
+                    ]
+                );
+                
+                $result['ad_insights']++;
                 return;
             }
 
@@ -924,8 +1156,19 @@ class FacebookAdsSyncService
                         'cost_per_action_type' => $insight['cost_per_action_type'] ?? null,
                         'cost_per_unique_action_type' => $insight['cost_per_unique_action_type'] ?? null,
                         
-                        // Video metrics tối giản: chỉ lưu video_views (ưu tiên từ actions nếu có)
+                        // Video metrics - chỉ giữ lại các trường chính
                         'video_views' => (int) ($insight['video_views'] ?? ($actionTotals['video_view'] ?? 0)),
+                        'video_plays' => (int) ($insight['video_plays'] ?? 0),
+                        'video_avg_time_watched' => (float) ($insight['video_avg_time_watched'] ?? 0),
+                        'video_p25_watched_actions' => (int) ($this->extractVideoMetricValue($insight, 'video_p25_watched_actions')),
+                        'video_p50_watched_actions' => (int) ($this->extractVideoMetricValue($insight, 'video_p50_watched_actions')),
+                        'video_p75_watched_actions' => (int) ($this->extractVideoMetricValue($insight, 'video_p75_watched_actions')),
+                        'video_p95_watched_actions' => (int) ($this->extractVideoMetricValue($insight, 'video_p95_watched_actions')),
+                        'video_p100_watched_actions' => (int) ($this->extractVideoMetricValue($insight, 'video_p100_watched_actions')),
+                        'thruplays' => (int) ($insight['thruplays'] ?? 0),
+                        'video_30_sec_watched' => (int) ($this->extractVideoMetricValue($insight, 'video_30_sec_watched_actions')),
+                        'video_play_actions' => (int) ($this->extractVideoMetricValue($insight, 'video_play_actions')),
+                        
                         // Lưu mapping post/page nếu schema có
                         ...(Schema::hasColumn('facebook_ad_insights', 'post_id') && $postIdForSave ? ['post_id' => (string) $postIdForSave] : []),
                         ...(Schema::hasColumn('facebook_ad_insights', 'page_id') && $pageIdForSave ? ['page_id' => (string) $pageIdForSave] : []),
@@ -951,6 +1194,7 @@ class FacebookAdsSyncService
      */
     private function extractCompleteVideoMetrics(array $insight): array
     {
+        // Remove debug statement
         $videoMetrics = [
             'video_views' => 0,
             'video_plays' => 0,
@@ -2356,7 +2600,7 @@ class FacebookAdsSyncService
                             'video_plays_at_50_percent' => (int) ($data['video_plays_at_50_percent'] ?? 0),
                             'video_plays_at_75_percent' => (int) ($data['video_plays_at_75_percent'] ?? 0),
                             'video_plays_at_100_percent' => (int) ($data['video_plays_at_100_percent'] ?? 0),
-                            'video_avg_time_watched_actions' => (int) ($data['video_avg_time_watched_actions'] ?? 0),
+                            'video_avg_time_watched' => (float) ($data['video_avg_time_watched'] ?? 0),
                             'video_p25_watched_actions' => (int) ($data['video_p25_watched_actions'] ?? 0),
                             'video_p50_watched_actions' => (int) ($data['video_p50_watched_actions'] ?? 0),
                             'video_p75_watched_actions' => (int) ($data['video_p75_watched_actions'] ?? 0),
@@ -2376,6 +2620,19 @@ class FacebookAdsSyncService
      */
     private function extractBreakdownValue(array $data, string $breakdownType): ?string
     {
+        // Nếu có trường breakdown chính
+        if (isset($data[$breakdownType])) {
+            $value = $data[$breakdownType];
+            
+            // Nếu là array, lấy id hoặc name
+            if (is_array($value)) {
+                return (string)($value['id'] ?? $value['name'] ?? json_encode($value));
+            }
+            
+            // Nếu là string hoặc number
+            return (string)$value;
+        }
+        
         switch ($breakdownType) {
             case 'age_gender':
                 $age = $data['age'] ?? '';
@@ -2404,33 +2661,47 @@ class FacebookAdsSyncService
                 return $data['action_type'] ?? null;
             
             case 'action_device':
-                return $data['action_device'] ?? null;
+                return $data['action_device'] ?? $data['device'] ?? $data['device_type'] ?? null;
             
             case 'action_destination':
-                return $data['action_destination'] ?? null;
+                return $data['action_destination'] ?? $data['destination'] ?? $data['target'] ?? null;
             
             case 'action_target_id':
-                return $data['action_target_id'] ?? null;
+                return $data['action_target_id'] ?? $data['target_id'] ?? $data['object_id'] ?? null;
             
             case 'action_reaction':
-                return $data['action_reaction'] ?? null;
+                return $data['action_reaction'] ?? $data['reaction'] ?? $data['reaction_type'] ?? null;
             
             case 'action_video_sound':
-                return $data['action_video_sound'] ?? null;
+                return $data['action_video_sound'] ?? $data['video_sound'] ?? $data['sound'] ?? null;
             
             case 'action_video_type':
-                return $data['action_video_type'] ?? null;
+                return $data['action_video_type'] ?? $data['video_type'] ?? $data['type'] ?? null;
             
             case 'action_carousel_card_id':
-                return $data['action_carousel_card_id'] ?? null;
+                return $data['action_carousel_card_id'] ?? $data['carousel_card_id'] ?? $data['card_id'] ?? null;
             
             case 'action_carousel_card_name':
-                return $data['action_carousel_card_name'] ?? null;
+                return $data['action_carousel_card_name'] ?? $data['carousel_card_name'] ?? $data['card_name'] ?? null;
             
             case 'action_canvas_component_name':
-                return $data['action_canvas_component_name'] ?? null;
+                return $data['action_canvas_component_name'] ?? $data['canvas_component_name'] ?? $data['component_name'] ?? null;
             
             default:
+                // Tìm kiếm các trường có thể liên quan
+                foreach ($data as $key => $value) {
+                    if (strpos($key, str_replace('action_', '', $breakdownType)) !== false) {
+                        return (string)$value;
+                    }
+                }
+                
+                // Log để debug
+                Log::info("Không tìm thấy breakdown value", [
+                    'breakdown_type' => $breakdownType,
+                    'available_keys' => array_keys($data),
+                    'sample_data' => array_slice($data, 0, 3)
+                ]);
+                
                 return null;
         }
     }

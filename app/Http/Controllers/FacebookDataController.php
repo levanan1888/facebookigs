@@ -64,9 +64,34 @@ class FacebookDataController extends Controller
         $data = [
             'posts' => $this->facebookDataService->getPostsByPage($pageId, $filters),
             'spending_stats' => $this->facebookDataService->getPostSpendingStats($pageId, $filters['date_from'] ?? null, $filters['date_to'] ?? null),
+            'page_summary' => $this->facebookDataService->getPageSummary($pageId),
+            'breakdowns' => [
+                'device' => $this->facebookDataService->getDeviceBreakdown($pageId, $filters['date_from'] ?? null, $filters['date_to'] ?? null),
+                'region' => $this->facebookDataService->getRegionBreakdown($pageId, $filters['date_from'] ?? null, $filters['date_to'] ?? null),
+                'gender_age' => $this->facebookDataService->getGenderAgeBreakdown($pageId, $filters['date_from'] ?? null, $filters['date_to'] ?? null),
+                'correlation' => $this->facebookDataService->getBudgetResultConversionCorrelation($pageId, $filters['date_from'] ?? null, $filters['date_to'] ?? null),
+            ],
         ];
         
         return response()->json($data);
+    }
+
+    /**
+     * API: Lấy tóm tắt AI theo góc nhìn marketing quản lý
+     */
+    public function getAiSummary(Request $request)
+    {
+        $pageId = (string) $request->input('page_id');
+        $since = $request->input('date_from');
+        $until = $request->input('date_to');
+        $metrics = $request->input('metrics', []);
+
+        try {
+            $summary = app(\App\Services\GeminiService::class)->generateMarketingSummary($pageId, $since, $until, $metrics);
+            return response()->json(['summary' => $summary]);
+        } catch (\Throwable $e) {
+            return response()->json(['summary' => 'Không tạo được nhận định AI lúc này.'], 200);
+        }
     }
 
     /**
@@ -81,5 +106,79 @@ class FacebookDataController extends Controller
         $stats = $this->facebookDataService->getPostSpendingStats($pageId, $dateFrom, $dateTo);
         
         return response()->json($stats);
+    }
+
+    /**
+     * API endpoint để lấy chi tiết chiến dịch quảng cáo
+     */
+    public function getAdCampaigns(Request $request)
+    {
+        $postId = $request->get('post_id');
+        $pageId = $request->get('page_id');
+        
+        if (!$postId || !$pageId) {
+            return response()->json(['error' => 'Missing post_id or page_id'], 400);
+        }
+        
+        $data = $this->facebookDataService->getAdCampaigns($postId, $pageId);
+        return response()->json($data);
+    }
+
+    public function getAdBreakdowns(Request $request)
+    {
+        $adId = $request->get('ad_id');
+        
+        if (!$adId) {
+            return response()->json(['error' => 'Missing ad_id'], 400);
+        }
+        
+        $data = $this->facebookDataService->getAdBreakdowns($adId);
+        return response()->json($data);
+    }
+
+    public function getAdInsights(Request $request)
+    {
+        $adId = $request->get('ad_id');
+        
+        if (!$adId) {
+            return response()->json(['error' => 'Missing ad_id'], 400);
+        }
+        
+        $data = $this->facebookDataService->getAdInsights($adId);
+        return response()->json($data);
+    }
+
+    public function showPostDetail(string $postId, string $pageId)
+    {
+        try {
+            // Lấy thông tin post
+            $post = $this->facebookDataService->getPostById($postId, $pageId);
+            
+            if (!$post) {
+                abort(404, 'Post không tồn tại');
+            }
+            
+            // Lấy breakdown data
+            $breakdowns = $this->facebookDataService->getPostBreakdowns($postId, $pageId);
+            $detailedBreakdowns = $this->facebookDataService->getPostDetailedBreakdowns($postId, $pageId);
+            
+            // Lấy insights data
+            $insights = $this->facebookDataService->getPostInsights($postId, $pageId);
+            
+            // Lấy actions data
+            $actions = $this->facebookDataService->getPostActions($postId, $pageId);
+            
+            return view('facebook.data-management.post-detail', [
+                'post' => $post,
+                'breakdowns' => $breakdowns,
+                'detailedBreakdowns' => $detailedBreakdowns,
+                'insights' => $insights,
+                'actions' => $actions,
+                'pageId' => $pageId
+            ]);
+            
+        } catch (\Exception $e) {
+            abort(500, 'Lỗi khi tải dữ liệu post: ' . $e->getMessage());
+        }
     }
 } 

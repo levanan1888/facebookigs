@@ -25,6 +25,12 @@
                         </svg>
                         Làm mới
                     </button>
+                    <button id="btnAiSummary" class="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700" title="Phân tích AI">
+                        <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                        Phân tích AI
+                    </button>
                 </div>
             </div>
 
@@ -48,7 +54,7 @@
                             <select name="account_id" class="w-full border rounded px-3 py-2 text-sm">
                                 <option value="">Tất cả</option>
                                 @foreach(($data['filters']['accounts'] ?? []) as $acc)
-                                    <option value="{{ $acc->id }}" {{ ($data['filters']['accountId'] ?? null) === $acc->id ? 'selected' : '' }}>
+                                    <option value="{{ $acc->id }}" {{ ($data['filters']['account_id'] ?? null) == $acc->id ? 'selected' : '' }}>
                                         {{ $acc->name }} ({{ $acc->account_id }})
                                     </option>
                                 @endforeach
@@ -59,7 +65,7 @@
                             <select name="campaign_id" class="w-full border rounded px-3 py-2 text-sm">
                                 <option value="">Tất cả</option>
                                 @foreach(($data['filters']['campaigns'] ?? []) as $c)
-                                    <option value="{{ $c->id }}" {{ ($data['filters']['campaignId'] ?? null) === $c->id ? 'selected' : '' }}>
+                                    <option value="{{ $c->id }}" {{ ($data['filters']['campaign_id'] ?? null) == $c->id ? 'selected' : '' }}>
                                         {{ $c->name }}
                                     </option>
                                 @endforeach
@@ -74,6 +80,8 @@
                 </form>
             </div>
             @endcan
+
+            <div id="aiSummaryHolder" class="mb-6 hidden"></div>
 
             <div class="grid grid-cols-2 md:grid-cols-4 gap-6">
                 <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
@@ -204,7 +212,7 @@
 
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div class="bg-white rounded-lg shadow p-6">
-                    <h3 class="text-lg font-semibold text-gray-900 mb-4">Hoạt động 7 ngày gần nhất</h3>
+                    <h3 class="text-lg font-semibold text-gray-900 mb-4">Hoạt động từ trước đến nay</h3>
                     <div class="h-72"><canvas id="activityChart"></canvas></div>
                 </div>
                 <div class="bg-white rounded-lg shadow p-6">
@@ -232,7 +240,7 @@
                     <div class="p-6 border-b border-gray-200"><h3 class="text-lg font-semibold text-gray-900">Top 5 Quảng cáo (Theo thời gian đồng bộ)</h3></div>
                     <div class="p-6">
                         <div class="space-y-4">
-                            @forelse($data['stats']['recent_ads'] ?? [] as $ad)
+                            @forelse($data['topAds'] ?? [] as $ad)
                                 <div class="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                                     <div class="flex-1">
                                         <h4 class="font-medium text-gray-900">{{ Str::limit($ad->name, 40) }}</h4>
@@ -254,59 +262,43 @@
                     </div>
                 </div>
                 <div class="bg-white rounded-lg shadow">
-                    <div class="p-6 border-b border-gray-200"><h3 class="text-lg font-semibold text-gray-900">Top 5 Posts (Theo tương tác)</h3></div>
+                    <div class="p-6 border-b border-gray-200"><h3 class="text-lg font-semibold text-gray-900">Top 5 Posts (Theo hiệu suất)</h3></div>
                     <div class="p-6">
                         <div class="space-y-4">
-                            @forelse($data['stats']['top_posts'] ?? [] as $post)
+                            @forelse($data['topPosts'] ?? [] as $post)
                                 <div class="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                                     <div class="flex-1">
                                         <h4 class="font-medium text-gray-900">
-                                            @if($post->post_message)
-                                                {{ Str::limit($post->post_message, 50) }}
-                                            @elseif($post->creative_link_message)
-                                                {{ Str::limit($post->creative_link_message, 50) }}
-                                            @else
-                                                {{ Str::limit($post->name ?? 'Ad không có tên', 50) }}
-                                            @endif
+                                            {{ Str::limit($post->message ?? 'Không có nội dung', 50) }}
                                         </h4>
                                         <p class="text-sm text-gray-600">
-                                            @if($post->post_id)
-                                                Post ID: {{ is_string($post->post_id) ? $post->post_id : json_encode($post->post_id) }}
-                                            @else
-                                                Link Ad
+                                            Post ID: {{ $post->id ?? 'N/A' }}
+                                            @if($post->id && $post->page_id)
+                                                <a href="{{ route('facebook.data-management.post-detail', ['postId' => $post->id, 'pageId' => $post->page_id]) }}" 
+                                                   class="ml-2 text-blue-600 hover:text-blue-800 underline text-xs">
+                                                    Xem chi tiết
+                                                </a>
                                             @endif
                                         </p>
                                         <div class="flex space-x-4 mt-2 text-sm text-gray-500">
-                                            <span title="Likes">👍 {{ number_format($post->post_likes ?? 0) }}</span>
-                                            <span title="Shares">🔄 {{ number_format($post->post_shares ?? 0) }}</span>
-                                            <span title="Comments">💬 {{ number_format($post->post_comments ?? 0) }}</span>
-                                            @if($post->ad_clicks)
-                                                <span title="Clicks">🖱️ {{ number_format($post->ad_clicks ?? 0) }}</span>
-                                            @endif
+                                            <span title="Chi phí">💰 {{ number_format($post->total_spend ?? 0, 0) }} VND</span>
+                                            <span title="Hiển thị">👁️ {{ number_format($post->total_impressions ?? 0) }}</span>
+                                            <span title="Click">🖱️ {{ number_format($post->total_clicks ?? 0) }}</span>
+                                            <span title="CTR">📊 {{ number_format(($post->avg_ctr ?? 0) * 100, 2) }}%</span>
                                         </div>
-                                        @if($post->post_permalink_url)
+                                        @if($post->permalink_url)
                                             <div class="mt-2">
-                                                <a href="{{ $post->post_permalink_url }}" target="_blank" class="text-xs text-blue-600 hover:text-blue-800 underline">
-                                                    Xem bài viết gốc
-                                                </a>
-                                            </div>
-                                        @elseif(!empty($post->page_id) && !empty($post->post_id))
-                                            <div class="mt-2">
-                                                <a href="{{ 'https://www.facebook.com/' . trim($post->page_id, '"') . '/posts/' . trim($post->post_id, '"') }}" target="_blank" class="text-xs text-blue-600 hover:text-blue-800 underline">
+                                                <a href="{{ $post->permalink_url }}" target="_blank" class="text-xs text-blue-600 hover:text-blue-800 underline">
                                                     Xem bài viết gốc
                                                 </a>
                                             </div>
                                         @endif
                                     </div>
                                     <div class="text-right">
-                                        @php
-                                            $totalEngagement = ($post->post_likes ?? 0) + ($post->post_shares ?? 0) + ($post->post_comments ?? 0);
-                                            $totalEngagement = $totalEngagement > 0 ? $totalEngagement : ($post->ad_clicks ?? 0);
-                                        @endphp
-                                        <p class="font-semibold text-gray-900">{{ number_format($totalEngagement) }}</p>
-                                        <p class="text-xs text-gray-500">Tổng tương tác</p>
-                                        @if($post->ad_spend)
-                                            <p class="text-xs text-green-600 mt-1">${{ number_format($post->ad_spend, 2) }}</p>
+                                        <p class="font-semibold text-gray-900">{{ number_format($post->total_spend ?? 0, 0) }}</p>
+                                        <p class="text-xs text-gray-500">Chi phí (VND)</p>
+                                        @if($post->total_video_views)
+                                            <p class="text-xs text-green-600 mt-1">🎥 {{ number_format($post->total_video_views) }}</p>
                                         @endif
                                     </div>
                                 </div>
@@ -320,6 +312,115 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Breakdown và Actions Data -->
+            @if(!empty($data['breakdowns']) || !empty($data['actions']['summary']))
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    @if(!empty($data['breakdowns']))
+                        <div class="bg-white rounded-lg shadow">
+                            <div class="p-6 border-b border-gray-200">
+                                <h3 class="text-lg font-semibold text-gray-900">Phân tích Breakdown</h3>
+                            </div>
+                            <div class="p-6">
+                                <div class="space-y-4">
+                                    @foreach($data['breakdowns'] as $breakdownType => $breakdownData)
+                                        <div class="border border-gray-200 rounded-lg p-4">
+                                            <h4 class="text-md font-medium text-gray-900 mb-3">{{ ucfirst(str_replace('_', ' ', $breakdownType)) }}</h4>
+                                            <div class="space-y-2">
+                                                @foreach(array_slice($breakdownData, 0, 5) as $value => $metrics)
+                                                    <div class="flex justify-between items-center text-sm">
+                                                        <span class="text-gray-600">
+                                                            @if($value === 'unknown')
+                                                                @switch($breakdownType)
+                                                                    @case('action_device')
+                                                                        Không xác định thiết bị
+                                                                        @break
+                                                                    @case('action_destination')
+                                                                        Không xác định đích đến
+                                                                        @break
+                                                                    @case('action_target_id')
+                                                                        Không xác định đối tượng
+                                                                        @break
+                                                                    @case('action_reaction')
+                                                                        Không xác định phản ứng
+                                                                        @break
+                                                                    @case('action_video_sound')
+                                                                        Không xác định âm thanh
+                                                                        @break
+                                                                    @case('action_video_type')
+                                                                        Không xác định loại video
+                                                                        @break
+                                                                    @case('action_carousel_card_id')
+                                                                        Không xác định thẻ carousel
+                                                                        @break
+                                                                    @case('action_carousel_card_name')
+                                                                        Không xác định tên thẻ
+                                                                        @break
+                                                                    @case('action_canvas_component_name')
+                                                                        Không xác định thành phần
+                                                                        @break
+                                                                    @case('age')
+                                                                        Không xác định độ tuổi
+                                                                        @break
+                                                                    @case('gender')
+                                                                        Không xác định giới tính
+                                                                        @break
+                                                                    @case('country')
+                                                                        Không xác định quốc gia
+                                                                        @break
+                                                                    @case('region')
+                                                                        Không xác định khu vực
+                                                                        @break
+                                                                    @case('publisher_platform')
+                                                                        Không xác định nền tảng
+                                                                        @break
+                                                                    @case('device_platform')
+                                                                        Không xác định thiết bị
+                                                                        @break
+                                                                    @case('impression_device')
+                                                                        Không xác định thiết bị hiển thị
+                                                                        @break
+                                                                    @default
+                                                                        Không xác định
+                                                                @endswitch
+                                                            @else
+                                                                {{ $value }}
+                                                            @endif
+                                                        </span>
+                                                        <div class="flex space-x-4">
+                                                            <span class="text-red-600">{{ number_format($metrics['spend'] ?? 0, 0) }} VND</span>
+                                                            <span class="text-blue-600">{{ number_format($metrics['impressions'] ?? 0) }}</span>
+                                                            <span class="text-green-600">{{ number_format($metrics['clicks'] ?? 0) }}</span>
+                                                        </div>
+                                                    </div>
+                                                @endforeach
+                                            </div>
+                                        </div>
+                                    @endforeach
+                                </div>
+                            </div>
+                        </div>
+                    @endif
+
+                    @if(!empty($data['actions']['summary']))
+                        <div class="bg-white rounded-lg shadow">
+                            <div class="p-6 border-b border-gray-200">
+                                <h3 class="text-lg font-semibold text-gray-900">Phân tích Actions</h3>
+                            </div>
+                            <div class="p-6">
+                                <div class="grid grid-cols-2 gap-4">
+                                    @foreach($data['actions']['summary'] as $actionType => $value)
+                                        <div class="text-center p-3 bg-blue-50 rounded-lg">
+                                            <div class="text-xl font-bold text-blue-600">{{ number_format($value) }}</div>
+                                            <div class="text-sm text-gray-600">{{ ucfirst(str_replace('_', ' ', $actionType)) }}</div>
+                                        </div>
+                                    @endforeach
+                                </div>
+                            </div>
+                        </div>
+                    @endif
+                </div>
+            @endif
         </div>
 
         <div id="guideModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full hidden z-50">
@@ -392,6 +493,7 @@
             const closeGuideModal = document.getElementById('closeGuideModal');
             const closeGuideModalBtn = document.getElementById('closeGuideModalBtn');
             const btnRefresh = document.getElementById('btnRefresh');
+            const btnAiSummary = document.getElementById('btnAiSummary');
             const btnToggleFilter = document.getElementById('btnToggleFilter');
             const filterPanel = document.getElementById('filterPanel');
 
@@ -412,6 +514,10 @@
                 };
             }
 
+            if (btnAiSummary) {
+                btnAiSummary.onclick = async function() { await requestAiSummary(true); };
+            }
+
             if (btnToggleFilter && filterPanel) {
                 btnToggleFilter.onclick = () => filterPanel.classList.toggle('hidden');
             }
@@ -429,7 +535,7 @@
                     { label: 'Quảng cáo', data: activityData.map(item => item.ads), borderColor: 'rgb(16,185,129)', backgroundColor: 'rgba(16,185,129,0.15)', pointRadius: 3, borderWidth: 2, fill: true, tension: 0.35 },
                     { label: 'Bài đăng', data: activityData.map(item => item.posts), borderColor: 'rgb(245,158,11)', backgroundColor: 'rgba(245,158,11,0.15)', pointRadius: 3, borderWidth: 2, fill: true, tension: 0.35 },
                     { label: 'Chi tiêu ($)', data: activityData.map(item => item.spend || 0), borderColor: 'rgb(239,68,68)', backgroundColor: 'rgba(239,68,68,0.15)', pointRadius: 3, borderWidth: 2, fill: true, tension: 0.35, yAxisID: 'y1' }
-                ] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' }, tooltip: { mode: 'index', intersect: false } }, interaction: { mode: 'index', intersect: false }, scales: { y: { type: 'linear', display: true, position: 'left', beginAtZero: true, grid: { color: 'rgba(0,0,0,0.05)' } }, y1: { type: 'linear', display: true, position: 'right', beginAtZero: true, grid: { drawOnChartArea: false } }, x: { grid: { display: false } } } } });
+                ] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' }, tooltip: { mode: 'index', intersect: false } }, interaction: { mode: 'index', intersect: false }, scales: { y: { type: 'linear', display: true, position: 'left', beginAtZero: true, grid: { color: 'rgba(0,0,0,0.05)' } }, y1: { type: 'linear', display: true, position: 'right', beginAtZero: true, grid: { drawOnChartArea: false } }, x: { grid: { display: false } } }, plugins: { title: { display: true, text: 'Hoạt động 30 ngày gần nhất' } } } });
             }
             if (statusEl) {
                 const statusCtx = statusEl.getContext('2d');
@@ -465,6 +571,44 @@
             }
         }
 
+        async function requestAiSummary(isManual = false) {
+            const holder = document.getElementById('aiSummaryHolder');
+            holder.classList.remove('hidden');
+            holder.innerHTML = `
+                <div class=\"bg-white rounded-lg shadow p-6 border border-emerald-200\">
+                    <div class=\"flex items-center justify-between mb-3\">
+                        <h3 class=\"text-lg font-semibold text-emerald-700\">Đánh giá tổng quan bởi AI</h3>
+                        <span class=\"text-xs text-gray-500\">Đang phân tích...</span>
+                    </div>
+                    <div class=\"text-sm text-gray-500\">Vui lòng đợi trong giây lát.</div>
+                </div>`;
+            try {
+                if (isManual) {
+                    const b = document.getElementById('btnAiSummary');
+                    if (b) { b.disabled = true; b.innerHTML = '<svg class="w-4 h-4 inline mr-2 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>Đang phân tích...'; }
+                }
+                const url = new URL('{{ route('facebook.overview.ai-summary') }}', window.location.origin);
+                if (isManual && (window._aiDebug || false)) url.searchParams.set('debug','1');
+                const res = await fetch(url.toString(), { method: 'POST', headers: { 'X-CSRF-TOKEN': '{{ csrf_token() }}', 'Accept': 'application/json' }});
+                const data = await res.json();
+                if (data && data.debug) {
+                    // In ra console để bạn kiểm tra metrics tổng hợp cuối cùng
+                    console.log('AI metrics (debug):', data.metrics);
+                    await renderAiCard('Đang ở chế độ debug – xem metrics trong console.');
+                } else {
+                    const text = (data && data.summary) ? data.summary : 'Không nhận được kết quả từ AI.';
+                    await renderAiCard(text);
+                }
+            } catch (_) {
+                await renderAiCard('Lỗi gọi AI. Vui lòng thử lại.');
+            } finally {
+                if (isManual) {
+                    const b = document.getElementById('btnAiSummary');
+                    if (b) { b.disabled = false; b.innerHTML = 'Phân tích AI'; }
+                }
+            }
+        }
+
         function ensureChartAndInit() {
             if (window.Chart) { initFacebookOverviewCharts(); return; }
             const s = document.createElement('script');
@@ -472,7 +616,52 @@
             s.onload = initFacebookOverviewCharts;
             document.head.appendChild(s);
         }
-        document.addEventListener('DOMContentLoaded', ensureChartAndInit);
+        async function renderAiCard(content) {
+            const holder = document.getElementById('aiSummaryHolder');
+            // Load a tiny markdown parser for clean output if needed
+            async function ensureMarked() {
+                if (window.marked) return;
+                await new Promise((resolve) => {
+                    const s = document.createElement('script');
+                    s.src = 'https://cdn.jsdelivr.net/npm/marked/marked.min.js';
+                    s.onload = resolve; document.head.appendChild(s);
+                });
+            }
+            await ensureMarked();
+            const md = (window.marked && window.marked.parse) ? window.marked.parse(content) : sanitizePlain(content);
+            holder.innerHTML = `
+                <div class=\"bg-white rounded-lg shadow p-6 border border-emerald-200\">
+                    <div class=\"flex items-center justify-between mb-4\">
+                        <h3 class=\"text-lg font-semibold text-emerald-700\">Đánh giá tổng quan bởi AI</h3>
+                        <span class=\"text-xs text-gray-500\">Cập nhật: ${new Date().toLocaleString()}</span>
+                    </div>
+                    <div class=\"text-[15px] leading-7 space-y-3 max-h-[200px] overflow-y-auto pr-2\">${md}</div>
+                </div>`;
+            holder.classList.remove('hidden');
+            holder.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        function sanitizePlain(t) {
+            const esc = t.replace(/[&<>]/g, (s) => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[s]));
+            // Bold **text**
+            let html = esc.replace(/\*\*(.+?)\*\*/g, '<strong>$1<\/strong>');
+            // Convert lines beginning with * or - to bullet list
+            const lines = html.split(/\n+/);
+            let out = ''; let inList = false;
+            for (const line of lines) {
+                const trimmed = line.trim();
+                if (/^(\*|-)\s+/.test(trimmed)) {
+                    if (!inList) { out += '<ul class="list-disc ml-5 space-y-1">'; inList = true; }
+                    out += '<li>' + trimmed.replace(/^(\*|-)+\s+/, '') + '</li>';
+                } else {
+                    if (inList) { out += '</ul>'; inList = false; }
+                    if (trimmed) out += '<p>' + trimmed + '</p>';
+                }
+            }
+            if (inList) out += '</ul>';
+            return out;
+        }
+        document.addEventListener('DOMContentLoaded', () => { ensureChartAndInit(); requestAiSummary(false); });
         window.addEventListener('livewire:navigated', ensureChartAndInit); // fix SPA re-init
         </script>
     </div>

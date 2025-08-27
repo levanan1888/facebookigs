@@ -16,7 +16,8 @@ class SyncFacebookAdsWithVideoMetrics extends Command
     protected $signature = 'facebook:sync-with-video-metrics 
                             {--since= : Start date (Y-m-d format)}
                             {--until= : End date (Y-m-d format)}
-                            {--limit=10 : Limit number of ads to process for testing}';
+                            {--limit=10 : Limit number of ads to process for testing}
+                            {--fix-video-metrics : Fix existing video metrics data}';
 
     /**
      * The console command description.
@@ -33,9 +34,13 @@ class SyncFacebookAdsWithVideoMetrics extends Command
         $since = $this->option('since') ?: now()->subDays(7)->format('Y-m-d');
         $until = $this->option('until') ?: now()->format('Y-m-d');
         $limit = (int) $this->option('limit');
+        $fixVideoMetrics = $this->option('fix-video-metrics');
 
         $this->info("Time range: {$since} to {$until}");
         $this->info("Limit: {$limit} ads");
+        if ($fixVideoMetrics) {
+            $this->info("Mode: Fix existing video metrics data");
+        }
 
         try {
             // Progress callback
@@ -51,6 +56,7 @@ class SyncFacebookAdsWithVideoMetrics extends Command
                         ['Ads', $data['counts']['ads']],
                         ['Ad Insights', $data['counts']['ad_insights']],
                         ['Breakdowns', $data['counts']['breakdowns'] ?? 0],
+                        ['Video Metrics Fixed', $data['counts']['video_metrics_fixed'] ?? 0],
                     ]
                 );
 
@@ -64,7 +70,7 @@ class SyncFacebookAdsWithVideoMetrics extends Command
             };
 
             // Sync data với video metrics đầy đủ từ Facebook BM
-            $result = $syncService->syncFacebookData($progressCallback, $since, $until);
+            $result = $syncService->syncFacebookData($progressCallback, $since, $until, $limit, $fixVideoMetrics);
 
             $this->info('Sync completed!');
             $this->table(
@@ -77,6 +83,7 @@ class SyncFacebookAdsWithVideoMetrics extends Command
                     ['Ads', $result['ads']],
                     ['Ad Insights', $result['ad_insights']],
                     ['Breakdowns', $result['breakdowns'] ?? 0],
+                    ['Video Metrics Fixed', $result['video_metrics_fixed'] ?? 0],
                 ]
             );
 
@@ -89,6 +96,24 @@ class SyncFacebookAdsWithVideoMetrics extends Command
             }
 
             $this->info("Duration: {$result['duration']} seconds");
+            
+            // Hiển thị thống kê video metrics
+            if (isset($result['video_metrics_stats'])) {
+                $this->info('Video Metrics Statistics:');
+                $this->table(
+                    ['Metric', 'Value'],
+                    [
+                        ['Total Video Views', number_format($result['video_metrics_stats']['total_video_views'] ?? 0)],
+                        ['Total Video Plays', number_format($result['video_metrics_stats']['total_video_plays'] ?? 0)],
+                        ['Video Plays at 25%', number_format($result['video_metrics_stats']['total_video_plays_at_25'] ?? 0)],
+                        ['Video Plays at 50%', number_format($result['video_metrics_stats']['total_video_plays_at_50'] ?? 0)],
+                        ['Video Plays at 75%', number_format($result['video_metrics_stats']['total_video_plays_at_75'] ?? 0)],
+                        ['Video Plays at 100%', number_format($result['video_metrics_stats']['total_video_plays_at_100'] ?? 0)],
+                        ['Thruplays', number_format($result['video_metrics_stats']['total_thruplays'] ?? 0)],
+                        ['Video 30s Watched', number_format($result['video_metrics_stats']['total_video_30_sec_watched'] ?? 0)],
+                    ]
+                );
+            }
             
             return 0;
 

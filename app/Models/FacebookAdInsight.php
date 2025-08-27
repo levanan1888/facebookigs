@@ -19,10 +19,10 @@ class FacebookAdInsight extends Model
         'actions', 'action_values', 'cost_per_action_type', 'cost_per_unique_action_type', 'breakdowns',
         // Bổ sung mapping post/page để dựng link
         'post_id', 'page_id',
-        // Video metrics fields - sau khi cleanup trùng lặp
+        // Video metrics fields - chỉ giữ lại các trường chính
         'video_views', 'video_view_time', 'video_avg_time_watched',
-        'video_plays', 'video_plays_at_25', 'video_plays_at_50', 'video_plays_at_75', 'video_plays_at_100',
-        'video_avg_time_watched_actions', 'video_p25_watched_actions', 'video_p50_watched_actions', 
+        'video_plays', 'video_play_actions',
+        'video_p25_watched_actions', 'video_p50_watched_actions', 
         'video_p75_watched_actions', 'video_p95_watched_actions', 'video_p100_watched_actions',
         'thruplays', 'video_30_sec_watched'
     ];
