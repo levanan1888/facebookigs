@@ -1043,7 +1043,17 @@ class FacebookDataService
                         $result[$breakdownType][$breakdownValue]['video_p95_watched_actions'] += $videoP95;
                         $result[$breakdownType][$breakdownValue]['video_p100_watched_actions'] += $videoP100;
                         $result[$breakdownType][$breakdownValue]['video_30_sec_watched'] += $video30Sec;
-                        $result[$breakdownType][$breakdownValue]['video_avg_time_watched'] += $videoAvgTime;
+                        
+                        // video_avg_time_watched cần được tính trung bình, không cộng dồn
+                        // Lưu giá trị cuối cùng để tính trung bình sau
+                        if ($videoAvgTime > 0) {
+                            $result[$breakdownType][$breakdownValue]['video_avg_time_watched'] = $videoAvgTime;
+                        }
+                        
+                        // Tính toán video_view_time từ video_avg_time_watched và video_views
+                        if ($videoAvgTime > 0 && $videoViews > 0) {
+                            $result[$breakdownType][$breakdownValue]['video_view_time'] += ($videoAvgTime * $videoViews);
+                        }
                     }
                 }
             }
@@ -1113,8 +1123,19 @@ class FacebookDataService
                     $breakdownValue = $row->breakdown_value ?? 'Unknown';
                     if ($breakdownValue === '' || $breakdownValue === null) { $breakdownValue = 'Unknown'; }
                     $breakdownValue = (string) $breakdownValue;
-
-                    $metrics = is_array($row->metrics) ? $row->metrics : [];
+                    // Robust decode: metrics có thể được lưu dạng JSON string (double-encoded)
+                    $metrics = [];
+                    if (is_array($row->metrics)) {
+                        $metrics = $row->metrics;
+                    } elseif (is_string($row->metrics)) {
+                        $decoded = json_decode($row->metrics, true);
+                        if (is_string($decoded)) {
+                            $decoded = json_decode($decoded, true);
+                        }
+                        if (is_array($decoded)) {
+                            $metrics = $decoded;
+                        }
+                    }
                     $spend = (float) ($metrics['spend'] ?? 0);
                     $impressions = (int) ($metrics['impressions'] ?? 0);
                     $clicks = (int) ($metrics['clicks'] ?? 0);
@@ -1123,17 +1144,19 @@ class FacebookDataService
                     $conversionValues = (float) ($metrics['conversion_values'] ?? 0.0);
                     $videoViews = (int) ($metrics['video_views'] ?? 0);
 
-                    if (!isset($result[$breakdownType][$breakdownValue])) {
-                        $result[$breakdownType][$breakdownValue] = [
-                            'spend' => 0.0,
-                            'impressions' => 0,
-                            'clicks' => 0,
-                            'reach' => 0,
-                            'conversions' => 0,
-                            'conversion_values' => 0.0,
-                            'video_views' => 0,
-                        ];
-                    }
+                                            if (!isset($result[$breakdownType][$breakdownValue])) {
+                            $result[$breakdownType][$breakdownValue] = [
+                                'spend' => 0.0,
+                                'impressions' => 0,
+                                'clicks' => 0,
+                                'reach' => 0,
+                                'conversions' => 0,
+                                'conversion_values' => 0.0,
+                                'video_views' => 0,
+                                'video_view_time' => 0,
+                                'video_avg_time_watched' => 0,
+                            ];
+                        }
 
                     $result[$breakdownType][$breakdownValue]['spend'] += $spend;
                     $result[$breakdownType][$breakdownValue]['impressions'] += $impressions;
@@ -1142,6 +1165,17 @@ class FacebookDataService
                     $result[$breakdownType][$breakdownValue]['conversions'] += $conversions;
                     $result[$breakdownType][$breakdownValue]['conversion_values'] += $conversionValues;
                     $result[$breakdownType][$breakdownValue]['video_views'] += $videoViews;
+                    
+                    // Xử lý video metrics
+                    $videoAvgTime = (int) ($metrics['video_avg_time_watched'] ?? 0);
+                    if ($videoAvgTime > 0) {
+                        $result[$breakdownType][$breakdownValue]['video_avg_time_watched'] = $videoAvgTime;
+                    }
+                    
+                    // Tính toán video_view_time
+                    if ($videoAvgTime > 0 && $videoViews > 0) {
+                        $result[$breakdownType][$breakdownValue]['video_view_time'] += ($videoAvgTime * $videoViews);
+                    }
                 }
             }
 
@@ -1154,6 +1188,10 @@ class FacebookDataService
 
                 foreach ($insights as $insight) {
                     $rows = $insight->breakdowns;
+                    if (is_string($rows)) {
+                        $tmp = json_decode($rows, true);
+                        if (is_array($tmp)) { $rows = $tmp; }
+                    }
                     if (!is_array($rows)) { continue; }
 
                     foreach ($rows as $row) {
@@ -1176,6 +1214,8 @@ class FacebookDataService
                                 'conversions' => 0,
                                 'conversion_values' => 0.0,
                                 'video_views' => 0,
+                                'video_view_time' => 0,
+                                'video_avg_time_watched' => 0,
                             ];
                         }
 
@@ -1195,6 +1235,17 @@ class FacebookDataService
                         $result[$type][$value]['conversions'] += (int) $conversions;
                         $result[$type][$value]['conversion_values'] += (float) $conversionValues;
                         $result[$type][$value]['video_views'] += (int) $vviews;
+                        
+                        // Xử lý video metrics trong fallback
+                        $videoAvgTime = (int) ($metrics['video_avg_time_watched'] ?? 0);
+                        if ($videoAvgTime > 0) {
+                            $result[$type][$value]['video_avg_time_watched'] = $videoAvgTime;
+                        }
+                        
+                        // Tính toán video_view_time
+                        if ($videoAvgTime > 0 && $vviews > 0) {
+                            $result[$type][$value]['video_view_time'] += ($videoAvgTime * $vviews);
+                        }
                     }
                 }
             }

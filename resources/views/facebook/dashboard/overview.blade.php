@@ -81,7 +81,16 @@
             </div>
             @endcan
 
-            <div id="aiSummaryHolder" class="mb-6 hidden"></div>
+            <!-- AI Summary Section - Moved to top -->
+            <div id="aiSummaryHolder" class="mb-6">
+                <div class="bg-white rounded-lg shadow p-6 border border-emerald-200">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-lg font-semibold text-emerald-700">Đánh giá tổng quan bởi AI</h3>
+                        <span class="text-xs text-gray-500">Đang phân tích...</span>
+                    </div>
+                    <div class="text-sm text-gray-500">Vui lòng đợi trong giây lát.</div>
+                </div>
+            </div>
 
             <div class="grid grid-cols-2 md:grid-cols-4 gap-6">
                 <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
@@ -313,112 +322,24 @@
                 </div>
             </div>
 
-            <!-- Breakdown và Actions Data -->
-            @if(!empty($data['breakdowns']) || !empty($data['actions']['summary']))
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    @if(!empty($data['breakdowns']))
-                        <div class="bg-white rounded-lg shadow">
-                            <div class="p-6 border-b border-gray-200">
-                                <h3 class="text-lg font-semibold text-gray-900">Phân tích Breakdown</h3>
-                            </div>
-                            <div class="p-6">
-                                <div class="space-y-4">
-                                    @foreach($data['breakdowns'] as $breakdownType => $breakdownData)
-                                        <div class="border border-gray-200 rounded-lg p-4">
-                                            <h4 class="text-md font-medium text-gray-900 mb-3">{{ ucfirst(str_replace('_', ' ', $breakdownType)) }}</h4>
-                                            <div class="space-y-2">
-                                                @foreach(array_slice($breakdownData, 0, 5) as $value => $metrics)
-                                                    <div class="flex justify-between items-center text-sm">
-                                                        <span class="text-gray-600">
-                                                            @if($value === 'unknown')
-                                                                @switch($breakdownType)
-                                                                    @case('action_device')
-                                                                        Không xác định thiết bị
-                                                                        @break
-                                                                    @case('action_destination')
-                                                                        Không xác định đích đến
-                                                                        @break
-                                                                    @case('action_target_id')
-                                                                        Không xác định đối tượng
-                                                                        @break
-                                                                    @case('action_reaction')
-                                                                        Không xác định phản ứng
-                                                                        @break
-                                                                    @case('action_video_sound')
-                                                                        Không xác định âm thanh
-                                                                        @break
-                                                                    @case('action_video_type')
-                                                                        Không xác định loại video
-                                                                        @break
-                                                                    @case('action_carousel_card_id')
-                                                                        Không xác định thẻ carousel
-                                                                        @break
-                                                                    @case('action_carousel_card_name')
-                                                                        Không xác định tên thẻ
-                                                                        @break
-                                                                    @case('action_canvas_component_name')
-                                                                        Không xác định thành phần
-                                                                        @break
-                                                                    @case('age')
-                                                                        Không xác định độ tuổi
-                                                                        @break
-                                                                    @case('gender')
-                                                                        Không xác định giới tính
-                                                                        @break
-                                                                    @case('country')
-                                                                        Không xác định quốc gia
-                                                                        @break
-                                                                    @case('region')
-                                                                        Không xác định khu vực
-                                                                        @break
-                                                                    @case('publisher_platform')
-                                                                        Không xác định nền tảng
-                                                                        @break
-                                                                    @case('device_platform')
-                                                                        Không xác định thiết bị
-                                                                        @break
-                                                                    @case('impression_device')
-                                                                        Không xác định thiết bị hiển thị
-                                                                        @break
-                                                                    @default
-                                                                        Không xác định
-                                                                @endswitch
-                                                            @else
-                                                                {{ $value }}
-                                                            @endif
-                                                        </span>
-                                                        <div class="flex space-x-4">
-                                                            <span class="text-red-600">{{ number_format($metrics['spend'] ?? 0, 0) }} VND</span>
-                                                            <span class="text-blue-600">{{ number_format($metrics['impressions'] ?? 0) }}</span>
-                                                            <span class="text-green-600">{{ number_format($metrics['clicks'] ?? 0) }}</span>
-                                                        </div>
-                                                    </div>
-                                                @endforeach
-                                            </div>
-                                        </div>
-                                    @endforeach
-                                </div>
+            <!-- Actions Data -->
+            @if(!empty($data['actions']['summary']))
+                <div class="grid grid-cols-1 lg:grid-cols-1 gap-6">
+                    <div class="bg-white rounded-lg shadow">
+                        <div class="p-6 border-b border-gray-200">
+                            <h3 class="text-lg font-semibold text-gray-900">Phân tích Actions</h3>
+                        </div>
+                        <div class="p-6">
+                            <div class="grid grid-cols-2 gap-4">
+                                @foreach($data['actions']['summary'] as $actionType => $value)
+                                    <div class="text-center p-3 bg-blue-50 rounded-lg">
+                                        <div class="text-xl font-bold text-blue-600">{{ number_format($value) }}</div>
+                                        <div class="text-sm text-gray-600">{{ ucfirst(str_replace('_', ' ', $actionType)) }}</div>
+                                    </div>
+                                @endforeach
                             </div>
                         </div>
-                    @endif
-
-                    @if(!empty($data['actions']['summary']))
-                        <div class="bg-white rounded-lg shadow">
-                            <div class="p-6 border-b border-gray-200">
-                                <h3 class="text-lg font-semibold text-gray-900">Phân tích Actions</h3>
-                            </div>
-                            <div class="p-6">
-                                <div class="grid grid-cols-2 gap-4">
-                                    @foreach($data['actions']['summary'] as $actionType => $value)
-                                        <div class="text-center p-3 bg-blue-50 rounded-lg">
-                                            <div class="text-xl font-bold text-blue-600">{{ number_format($value) }}</div>
-                                            <div class="text-sm text-gray-600">{{ ucfirst(str_replace('_', ' ', $actionType)) }}</div>
-                                        </div>
-                                    @endforeach
-                                </div>
-                            </div>
-                        </div>
-                    @endif
+                    </div>
                 </div>
             @endif
         </div>
@@ -573,7 +494,6 @@
 
         async function requestAiSummary(isManual = false) {
             const holder = document.getElementById('aiSummaryHolder');
-            holder.classList.remove('hidden');
             holder.innerHTML = `
                 <div class=\"bg-white rounded-lg shadow p-6 border border-emerald-200\">
                     <div class=\"flex items-center justify-between mb-3\">
@@ -587,13 +507,40 @@
                     const b = document.getElementById('btnAiSummary');
                     if (b) { b.disabled = true; b.innerHTML = '<svg class="w-4 h-4 inline mr-2 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>Đang phân tích...'; }
                 }
+                
+                // Chuẩn bị data breakdowns từ view để gửi cho AI
+                const breakdownsData = {
+                    breakdowns: @json($data['breakdowns'] ?? []),
+                    actions: @json($data['actions'] ?? []),
+                    stats: @json($data['stats'] ?? []),
+                    totals: @json($data['totals'] ?? []),
+                    performanceStats: @json($data['performanceStats'] ?? []),
+                    last7Days: @json($data['last7Days'] ?? []),
+                    statusStats: @json($data['statusStats'] ?? [])
+                };
+                
                 const url = new URL('{{ route('facebook.overview.ai-summary') }}', window.location.origin);
                 if (isManual && (window._aiDebug || false)) url.searchParams.set('debug','1');
-                const res = await fetch(url.toString(), { method: 'POST', headers: { 'X-CSRF-TOKEN': '{{ csrf_token() }}', 'Accept': 'application/json' }});
+                
+                const res = await fetch(url.toString(), { 
+                    method: 'POST', 
+                    headers: { 
+                        'X-CSRF-TOKEN': '{{ csrf_token() }}', 
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        breakdowns_data: breakdownsData
+                    })
+                });
+                
                 const data = await res.json();
                 if (data && data.debug) {
                     // In ra console để bạn kiểm tra metrics tổng hợp cuối cùng
                     console.log('AI metrics (debug):', data.metrics);
+                    console.log('Breakdowns data sent:', breakdownsData);
+                    console.log('Frontend breakdowns received:', data.hasFrontendBreakdowns);
+                    console.log('Breakdowns count:', data.breakdownsCount);
                     await renderAiCard('Đang ở chế độ debug – xem metrics trong console.');
                 } else {
                     const text = (data && data.summary) ? data.summary : 'Không nhận được kết quả từ AI.';
@@ -637,7 +584,6 @@
                     </div>
                     <div class=\"text-[15px] leading-7 space-y-3 max-h-[200px] overflow-y-auto pr-2\">${md}</div>
                 </div>`;
-            holder.classList.remove('hidden');
             holder.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
 

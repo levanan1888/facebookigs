@@ -751,7 +751,10 @@ class FacebookAdsService
         // Fields cơ bản hợp lệ với tất cả breakdowns
         $baseFields = [
             'spend', 'reach', 'impressions', 'clicks', 'ctr', 'cpc', 'cpm', 'frequency',
-            'unique_clicks', 'actions', 'action_values', 'ad_name', 'ad_id'
+            'unique_clicks', 'unique_ctr', 'conversions', 'conversion_values', 'cost_per_conversion', 'purchase_roas',
+            'outbound_clicks', 'unique_outbound_clicks', 'inline_link_clicks', 'unique_inline_link_clicks',
+            'cost_per_action_type', 'cost_per_unique_action_type',
+            'actions', 'action_values', 'ad_name', 'ad_id'
         ];
         
         // Video metrics fields chỉ hợp lệ với một số breakdowns
@@ -1669,12 +1672,25 @@ class FacebookAdsService
         
         $fields = [
             'spend', 'reach', 'impressions', 'clicks', 'ctr', 'cpc', 'cpm', 'frequency',
-            'unique_clicks', 'actions', 'action_values', 'ad_name', 'ad_id',
+            'unique_clicks', 'unique_ctr', 'actions', 'action_values', 'ad_name', 'ad_id',
+            
+            // Conversion metrics
+            'conversions', 'conversion_values', 'cost_per_conversion', 'purchase_roas',
+            
+            // Click metrics
+            'outbound_clicks', 'unique_outbound_clicks', 'inline_link_clicks', 'unique_inline_link_clicks',
+            
+            // Cost metrics
+            'cost_per_action_type', 'cost_per_unique_action_type',
+            
             // Chỉ sử dụng các video metrics fields hợp lệ theo Facebook API documentation
             'video_30_sec_watched_actions', 'video_avg_time_watched_actions',
             'video_p25_watched_actions', 'video_p50_watched_actions', 
             'video_p75_watched_actions', 'video_p95_watched_actions', 'video_p100_watched_actions',
-            'video_play_actions' // Field mới phát hiện từ test
+            'video_play_actions', // Field mới phát hiện từ test
+            
+            // Date fields
+            'date_start', 'date_stop'
         ];
         
         $params = [
@@ -1708,6 +1724,7 @@ class FacebookAdsService
 
     /**
      * Lấy tất cả breakdowns có sẵn cho một object
+     * Dựa trên Facebook Marketing API documentation
      */
     public function getAllAvailableBreakdowns(): array
     {
@@ -1742,7 +1759,14 @@ class FacebookAdsService
                 'action_video_type' => 'Loại video',
                 'action_carousel_card_id' => 'ID card carousel',
                 'action_carousel_card_name' => 'Tên card carousel',
-                'action_canvas_component_name' => 'Tên component Canvas'
+                'action_canvas_component_name' => 'Tên component Canvas',
+                // Mới thêm theo docs
+                'action_converted_product_id' => 'ID sản phẩm được convert (Collaborative Ads)',
+                'matched_persona_id' => 'ID persona được match',
+                'matched_persona_name' => 'Tên persona được match',
+                'signal_source_bucket' => 'Nguồn signal',
+                'standard_event_content_type' => 'Loại nội dung event chuẩn',
+                'conversion_destination' => 'Đích đến conversion'
             ],
             'campaign_specific' => [
                 'frequency_value' => 'Giá trị frequency (Reach & Frequency campaigns)',
@@ -1765,6 +1789,112 @@ class FacebookAdsService
                 'link_url_asset' => 'Link URL asset',
                 'title_asset' => 'Title asset',
                 'video_asset' => 'Video asset'
+            ]
+        ];
+    }
+
+    /**
+     * Kiểm tra breakdowns có hợp lệ không
+     * Dựa trên Facebook API limitations
+     */
+    public function validateBreakdowns(array $breakdowns): array
+    {
+        $errors = [];
+        $warnings = [];
+
+        // Kiểm tra breakdowns không hỗ trợ
+        $unsupportedBreakdowns = [
+            'app_store_clicks',
+            'newsfeed_avg_position', 
+            'newsfeed_clicks',
+            'relevance_score',
+            'newsfeed_impressions'
+        ];
+
+        foreach ($breakdowns as $breakdown) {
+            if (in_array($breakdown, $unsupportedBreakdowns)) {
+                $errors[] = "Breakdown '{$breakdown}' không được hỗ trợ";
+            }
+        }
+
+        // Kiểm tra video metrics limitations
+        $videoRestrictedBreakdowns = [
+            'region', 
+            'dma', 
+            'hourly_stats_aggregated_by_advertiser_time_zone', 
+            'hourly_stats_aggregated_by_audience_time_zone'
+        ];
+
+        $hasVideoRestriction = array_intersect($breakdowns, $videoRestrictedBreakdowns);
+        if (!empty($hasVideoRestriction)) {
+            $warnings[] = "Video metrics không được hỗ trợ với breakdowns: " . implode(', ', $hasVideoRestriction);
+        }
+
+        // Kiểm tra video_avg_time_watched_actions limitation
+        if (in_array('region', $breakdowns)) {
+            $warnings[] = "video_avg_time_watched_actions không hỗ trợ với region breakdown";
+        }
+
+        // Kiểm tra hourly breakdowns limitations
+        $hourlyBreakdowns = [
+            'hourly_stats_aggregated_by_advertiser_time_zone',
+            'hourly_stats_aggregated_by_audience_time_zone'
+        ];
+
+        $hasHourlyBreakdown = array_intersect($breakdowns, $hourlyBreakdowns);
+        if (!empty($hasHourlyBreakdown)) {
+            $warnings[] = "Hourly breakdowns không hỗ trợ reach, frequency, unique fields";
+        }
+
+        return [
+            'valid' => empty($errors),
+            'errors' => $errors,
+            'warnings' => $warnings
+        ];
+    }
+
+    /**
+     * Lấy các breakdown combinations được hỗ trợ
+     * Dựa trên Facebook API documentation
+     */
+    public function getSupportedBreakdownCombinations(): array
+    {
+        return [
+            'single' => [
+                'action_type',
+                'action_target_id', 
+                'action_device',
+                'action_reaction',
+                'age',
+                'gender',
+                'country',
+                'region',
+                'publisher_platform',
+                'product_id',
+                'hourly_stats_aggregated_by_advertiser_time_zone',
+                'hourly_stats_aggregated_by_audience_time_zone',
+                'action_carousel_card_id',
+                'action_carousel_card_name'
+            ],
+            'combinations' => [
+                'age,gender',
+                'action_device,impression_device',
+                'action_device,publisher_platform',
+                'action_device,publisher_platform,impression_device',
+                'action_device,publisher_platform,platform_position',
+                'action_device,publisher_platform,platform_position,impression_device',
+                'action_type,action_reaction',
+                'action_carousel_card_id,impression_device',
+                'action_carousel_card_id,country',
+                'action_carousel_card_id,age',
+                'action_carousel_card_id,gender',
+                'action_carousel_card_id,age,gender',
+                'publisher_platform,impression_device',
+                'publisher_platform,platform_position',
+                'publisher_platform,platform_position,impression_device'
+            ],
+            'action_converted_product_id' => [
+                'action_type,action_converted_product_id' // Chỉ cho Collaborative Ads
             ]
         ];
     }
@@ -2043,5 +2173,146 @@ class FacebookAdsService
             ]);
             return ['error' => ['message' => $e->getMessage()]];
         }
+    }
+
+    /**
+     * Lấy tất cả insights với breakdowns cho một ad
+     * Bao gồm video metrics, action breakdowns, và các breakdowns khác
+     */
+    public function getAllInsightsWithBreakdowns(string $adId): array
+    {
+        $results = [];
+        
+        // 1. Lấy basic insights với video metrics
+        $results['basic_insights'] = $this->getInsightsWithActionBreakdowns($adId, ['action_type']);
+        
+        // 2. Lấy insights với các breakdowns chính (tránh combinations không hợp lệ)
+        $mainBreakdowns = [
+            'demographics' => ['age', 'gender'],
+            'geographic' => ['country', 'region'],
+            'platform' => ['publisher_platform', 'device_platform', 'impression_device']
+            // Loại bỏ platform_position vì có conflict với action_type
+        ];
+        
+        foreach ($mainBreakdowns as $category => $breakdowns) {
+            foreach ($breakdowns as $breakdown) {
+                try {
+                    // Validate breakdown trước khi gọi API
+                    $validation = $this->validateBreakdowns([$breakdown]);
+                    if (!$validation['valid']) {
+                        Log::warning("Breakdown {$breakdown} không hợp lệ", $validation['errors']);
+                        continue;
+                    }
+                    
+                    $results["breakdown_{$breakdown}"] = $this->getInsightsForAdWithBreakdowns($adId, [$breakdown]);
+                } catch (\Exception $e) {
+                    Log::warning("Không thể lấy breakdown {$breakdown}", [
+                        'ad_id' => $adId,
+                        'error' => $e->getMessage()
+                    ]);
+                    $results["breakdown_{$breakdown}"] = ['error' => $e->getMessage()];
+                }
+            }
+        }
+        
+        // 3. Lấy action breakdowns chi tiết (mỗi cái riêng biệt để tránh conflict)
+        $actionBreakdowns = [
+            'action_device',
+            'action_destination', 
+            'action_target_id',
+            'action_reaction',
+            'action_video_sound', // Video sound breakdown
+            'action_video_type',  // Video type breakdown
+            'action_carousel_card_id',
+            'action_carousel_card_name',
+            'action_canvas_component_name',
+            // Mới thêm theo docs
+            'matched_persona_id',
+            'matched_persona_name',
+            'signal_source_bucket',
+            'standard_event_content_type',
+            'conversion_destination'
+        ];
+        
+        foreach ($actionBreakdowns as $breakdown) {
+            try {
+                $results["action_breakdown_{$breakdown}"] = $this->getInsightsWithActionBreakdowns($adId, [$breakdown]);
+            } catch (\Exception $e) {
+                Log::warning("Không thể lấy action breakdown {$breakdown}", [
+                    'ad_id' => $adId,
+                    'error' => $e->getMessage()
+                ]);
+                $results["action_breakdown_{$breakdown}"] = ['error' => $e->getMessage()];
+            }
+        }
+        
+        // 4. Lấy asset breakdowns (video_asset, image_asset, etc.)
+        $assetBreakdowns = [
+            'video_asset',      // Video asset breakdown
+            'image_asset',
+            'body_asset',
+            'title_asset',
+            'description_asset',
+            'call_to_action_asset',
+            'link_url_asset',
+            'ad_format_asset'
+        ];
+        
+        foreach ($assetBreakdowns as $breakdown) {
+            try {
+                $results["asset_breakdown_{$breakdown}"] = $this->getInsightsForAdWithBreakdowns($adId, [$breakdown]);
+            } catch (\Exception $e) {
+                Log::warning("Không thể lấy asset breakdown {$breakdown}", [
+                    'ad_id' => $adId,
+                    'error' => $e->getMessage()
+                ]);
+                $results["asset_breakdown_{$breakdown}"] = ['error' => $e->getMessage()];
+            }
+        }
+        
+        // 5. Lấy campaign specific breakdowns
+        $campaignBreakdowns = [
+            'frequency_value',
+            'user_segment_key',
+            'product_id',
+            'place_page_id'
+        ];
+        
+        foreach ($campaignBreakdowns as $breakdown) {
+            try {
+                $results["campaign_breakdown_{$breakdown}"] = $this->getInsightsForAdWithBreakdowns($adId, [$breakdown]);
+            } catch (\Exception $e) {
+                Log::warning("Không thể lấy campaign breakdown {$breakdown}", [
+                    'ad_id' => $adId,
+                    'error' => $e->getMessage()
+                ]);
+                $results["campaign_breakdown_{$breakdown}"] = ['error' => $e->getMessage()];
+            }
+        }
+        
+        // 6. Lấy app tracking breakdowns
+        $appTrackingBreakdowns = [
+            'app_id',
+            'skan_conversion_id',
+            'skan_campaign_id',
+            'is_conversion_id_modeled'
+        ];
+        
+        foreach ($appTrackingBreakdowns as $breakdown) {
+            try {
+                $results["app_breakdown_{$breakdown}"] = $this->getInsightsForAdWithBreakdowns($adId, [$breakdown]);
+            } catch (\Exception $e) {
+                Log::warning("Không thể lấy app tracking breakdown {$breakdown}", [
+                    'ad_id' => $adId,
+                    'error' => $e->getMessage()
+                ]);
+                $results["app_breakdown_{$breakdown}"] = ['error' => $e->getMessage()];
+            }
+        }
+        
+        // 7. Lấy engagement data với breakdowns chi tiết
+        $results['engagement_breakdowns'] = $this->getAdEngagementWithBreakdowns($adId);
+        
+        return $results;
     }
 }

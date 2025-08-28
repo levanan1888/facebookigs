@@ -1,6 +1,12 @@
 <x-layouts.app :title="'Chi tiết bài viết - ' . $post->id">
 <!-- Chart.js -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
+<style>
+@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+.animate-fade-in { animation: fadeIn .25s ease-out; }
+.ai-dots::after { content: ' .'; animation: dots 1.2s steps(3, end) infinite; }
+@keyframes dots { 0% { content: ' .'; } 33% { content: ' ..'; } 66% { content: ' ...'; } 100% { content: ' .'; } }
+</style>
 
 <div class="p-6">
     <!-- Header -->
@@ -66,7 +72,7 @@
                 </svg>
                 <div>
                     <div class="text-sm font-semibold text-indigo-800 mb-1">Nhận định AI (Chuyên gia Marketing)</div>
-                    <div id="ai-summary-text" class="text-sm text-indigo-900" style="white-space: pre-line">Đang tạo nhận định...</div>
+                    <div id="ai-summary-text" class="text-sm text-indigo-900 ai-dots" style="white-space: pre-line">Đang tạo nhận định</div>
                 </div>
             </div>
         </div>
@@ -98,13 +104,20 @@
             <h2 class="text-xl font-semibold text-gray-900 mb-4">Phân tích Breakdown Chi tiết</h2>
             
             @foreach($detailedBreakdowns as $breakdownType => $breakdownData)
-                <div class="mb-8">
-                    <h3 class="text-lg font-medium text-gray-900 mb-4">{{ ucfirst(str_replace('_', ' ', $breakdownType)) }}</h3>
+                <details class="mb-8 group" open>
+                    <summary class="cursor-pointer list-none">
+                        <h3 class="text-lg font-medium text-gray-900 mb-4 inline-flex items-center">
+                            {{ ucfirst(str_replace('_', ' ', $breakdownType)) }}
+                            <svg class="w-4 h-4 ml-2 text-gray-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                            </svg>
+                        </h3>
+                    </summary>
                     
                     <!-- Breakdown Table -->
                     <div class="overflow-x-auto mb-6">
                         <table class="min-w-full divide-y divide-gray-200">
-                            <thead class="bg-gray-50">
+                            <thead class="bg-gray-50 sticky top-0 z-10">
                                 <tr>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ ucfirst(str_replace('_', ' ', $breakdownType)) }}</th>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Chi phí (VND)</th>
@@ -118,7 +131,7 @@
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Video Views</th>
                                 </tr>
                             </thead>
-                            <tbodyác class="bg-white divide-y divide-gray-200">
+                            <tbody class="bg-white divide-y divide-gray-200">
                                 @foreach($breakdownData as $value => $metrics)
                                     <tr class="hover:bg-gray-50">
                                         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
@@ -191,7 +204,7 @@
                                     </tr>
                                    
                                 @endforeach
-                            </tbodyác 
+                            </tbody>
                         </table>
                     </div>
 
@@ -200,7 +213,7 @@
                         <div class="overflow-x-auto">
                             <h4 class="text-md font-medium text-gray-900 mb-3">Thống kê Video</h4>
                             <table class="min-w-full divide-y divide-gray-200">
-                                <thead class="bg-gray-50">
+                                <thead class="bg-gray-50 sticky top-0 z-10">
                                     <tr>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{{ ucfirst(str_replace('_', ' ', $breakdownType)) }}</th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Video Views</th>
@@ -292,9 +305,9 @@
                             </table>
                         </div>
                     @endif
-                </div>
+                </details>
             @endforeach
-        </div>
+                </div>
     @endif
 
     <!-- Breakdown Charts -->
@@ -333,7 +346,7 @@
                     </div>
                 </div>
             @endforeach
-        </div>
+            </div>
     @endif
 
     <!-- Insights Charts -->
@@ -364,44 +377,44 @@
                 <div class="bg-gray-50 p-4 rounded-lg">
                     <h4 class="text-md font-medium text-gray-700 mb-3">CTR theo thời gian</h4>
                     <canvas id="ctr-time-chart" width="400" height="200"></canvas>
-                </div>
             </div>
         </div>
+            </div>
     @endif
 
     <!-- Actions Data -->
-    @if(!empty($actions['summary']))
+                @if(!empty($actions['summary']))
         <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
             <h2 class="text-xl font-semibold text-gray-900 mb-4">Phân tích Actions</h2>
             
-            <!-- Actions Summary -->
+                        <!-- Actions Summary -->
             <div class="mb-6">
                 <h3 class="text-lg font-medium text-gray-900 mb-4">Tổng hợp Actions</h3>
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    @foreach(array_slice($actions['summary'], 0, 8) as $actionType => $value)
-                        <div class="text-center p-3 bg-blue-50 rounded-lg">
+                                @foreach(array_slice($actions['summary'], 0, 8) as $actionType => $value)
+                                    <div class="text-center p-3 bg-blue-50 rounded-lg">
                             <div class="text-xl font-bold text-blue-600">{{ number_format($value) }}</div>
                             <div class="text-sm text-gray-600">{{ ucfirst(str_replace('_', ' ', $actionType)) }}</div>
+                                    </div>
+                                @endforeach
+                            </div>
                         </div>
-                    @endforeach
-                </div>
-            </div>
-
+                        
             <!-- Detailed Actions Table -->
-            @if(!empty($actions['detailed_actions']))
+                    @if(!empty($actions['detailed_actions']))
                 <div class="mb-6">
                     <h3 class="text-lg font-medium text-gray-900 mb-4">Chi tiết Actions</h3>
-                    <div class="overflow-x-auto">
-                        <table class="min-w-full divide-y divide-gray-200">
-                            <thead class="bg-gray-50">
-                                <tr>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Loại Action</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tổng giá trị</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Số lần xuất hiện</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mô tả</th>
-                                </tr>
-                            </thead>
-                            <tbody class="bg-white divide-y divide-gray-200">
+                            <div class="overflow-x-auto">
+                                <table class="min-w-full divide-y divide-gray-200">
+                                    <thead class="bg-gray-50">
+                                        <tr>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Loại Action</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tổng giá trị</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Số lần xuất hiện</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mô tả</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="bg-white divide-y divide-gray-200">
                                 @foreach($actions['detailed_actions'] as $actionType => $details)
                                     <tr class="hover:bg-gray-50">
                                         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
@@ -414,60 +427,60 @@
                                             {{ number_format($details['occurrences']) }}
                                         </td>
                                         <td class="px-6 py-4 text-sm text-gray-600">
-                                            @php
-                                                $descriptions = [
-                                                    'video_view' => 'Lượt xem video',
-                                                    'post_engagement' => 'Tương tác với bài viết',
-                                                    'page_engagement' => 'Tương tác với trang',
-                                                    'link_click' => 'Click vào link',
-                                                    'like' => 'Lượt thích',
-                                                    'comment' => 'Bình luận',
-                                                    'share' => 'Chia sẻ',
-                                                    'onsite_conversion.messaging_conversation_started_7d' => 'Bắt đầu cuộc trò chuyện tin nhắn (7 ngày)',
-                                                    'onsite_conversion.total_messaging_connection' => 'Tổng kết nối tin nhắn',
-                                                    'onsite_conversion.lead' => 'Lead từ website',
-                                                    'onsite_web_purchase' => 'Mua hàng từ website',
-                                                    'onsite_conversion.purchase' => 'Mua hàng',
-                                                    'onsite_conversion.messaging_conversation_replied_7d' => 'Trả lời tin nhắn (7 ngày)',
-                                                    'onsite_conversion.messaging_user_call_placed' => 'Gọi điện từ tin nhắn',
-                                                    'onsite_conversion.post_save' => 'Lưu bài viết',
-                                                    'onsite_conversion.messaging_welcome_message_view' => 'Xem tin nhắn chào mừng',
-                                                    'onsite_conversion.messaging_user_depth_2_message_send' => 'Gửi tin nhắn độ sâu 2',
-                                                    'onsite_conversion.messaging_user_depth_3_message_send' => 'Gửi tin nhắn độ sâu 3',
-                                                    'onsite_conversion.messaging_user_depth_5_message_send' => 'Gửi tin nhắn độ sâu 5',
-                                                    'onsite_conversion.messaging_60s_call_connect' => 'Kết nối cuộc gọi 60s',
-                                                    'onsite_conversion.messaging_20s_call_connect' => 'Kết nối cuộc gọi 20s',
-                                                    'onsite_conversion.messaging_first_reply' => 'Trả lời tin nhắn đầu tiên',
-                                                    'onsite_conversion.lead_grouped' => 'Lead được nhóm',
-                                                    'onsite_app_purchase' => 'Mua hàng từ app',
-                                                    'omni_purchase' => 'Mua hàng đa kênh',
-                                                    'post_interaction_gross' => 'Tương tác thô với bài viết',
-                                                    'post_reaction' => 'Phản ứng với bài viết',
-                                                    'post' => 'Bài viết',
-                                                    'lead' => 'Lead',
-                                                    'offsite_complete_registration_add_meta_leads' => 'Đăng ký hoàn thành từ Meta',
-                                                    'offsite_search_add_meta_leads' => 'Tìm kiếm từ Meta',
-                                                    'offsite_content_view_add_meta_leads' => 'Xem nội dung từ Meta'
-                                                ];
-                                            @endphp
-                                            {{ $descriptions[$actionType] ?? 'Tương tác khác' }}
-                                        </td>
-                                    </tr>
-                                @endforeach
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            @endif
+                                        @php
+                                            $descriptions = [
+                                                'video_view' => 'Lượt xem video',
+                                                'post_engagement' => 'Tương tác với bài viết',
+                                                'page_engagement' => 'Tương tác với trang',
+                                                'link_click' => 'Click vào link',
+                                                'like' => 'Lượt thích',
+                                                'comment' => 'Bình luận',
+                                                'share' => 'Chia sẻ',
+                                                'onsite_conversion.messaging_conversation_started_7d' => 'Bắt đầu cuộc trò chuyện tin nhắn (7 ngày)',
+                                                'onsite_conversion.total_messaging_connection' => 'Tổng kết nối tin nhắn',
+                                                'onsite_conversion.lead' => 'Lead từ website',
+                                                'onsite_web_purchase' => 'Mua hàng từ website',
+                                                'onsite_conversion.purchase' => 'Mua hàng',
+                                                'onsite_conversion.messaging_conversation_replied_7d' => 'Trả lời tin nhắn (7 ngày)',
+                                                'onsite_conversion.messaging_user_call_placed' => 'Gọi điện từ tin nhắn',
+                                                'onsite_conversion.post_save' => 'Lưu bài viết',
+                                                'onsite_conversion.messaging_welcome_message_view' => 'Xem tin nhắn chào mừng',
+                                                'onsite_conversion.messaging_user_depth_2_message_send' => 'Gửi tin nhắn độ sâu 2',
+                                                'onsite_conversion.messaging_user_depth_3_message_send' => 'Gửi tin nhắn độ sâu 3',
+                                                'onsite_conversion.messaging_user_depth_5_message_send' => 'Gửi tin nhắn độ sâu 5',
+                                                'onsite_conversion.messaging_60s_call_connect' => 'Kết nối cuộc gọi 60s',
+                                                'onsite_conversion.messaging_20s_call_connect' => 'Kết nối cuộc gọi 20s',
+                                                'onsite_conversion.messaging_first_reply' => 'Trả lời tin nhắn đầu tiên',
+                                                'onsite_conversion.lead_grouped' => 'Lead được nhóm',
+                                                'onsite_app_purchase' => 'Mua hàng từ app',
+                                                'omni_purchase' => 'Mua hàng đa kênh',
+                                                'post_interaction_gross' => 'Tương tác thô với bài viết',
+                                                'post_reaction' => 'Phản ứng với bài viết',
+                                                'post' => 'Bài viết',
+                                                'lead' => 'Lead',
+                                                'offsite_complete_registration_add_meta_leads' => 'Đăng ký hoàn thành từ Meta',
+                                                'offsite_search_add_meta_leads' => 'Tìm kiếm từ Meta',
+                                                'offsite_content_view_add_meta_leads' => 'Xem nội dung từ Meta'
+                                            ];
+                                        @endphp
+                                                    {{ $descriptions[$actionType] ?? 'Tương tác khác' }}
+                                                </td>
+                                            </tr>
+                                        @endforeach
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    @endif
             
             <!-- Actions Chart -->
             @if(!empty($actions['daily_actions']))
                 <div class="bg-gray-50 p-4 rounded-lg">
                     <h4 class="text-md font-medium text-gray-700 mb-3">Actions theo thời gian</h4>
                     <canvas id="actions-chart" width="400" height="200"></canvas>
-                </div>
-            @endif
-        </div>
+                    </div>
+                @endif
+            </div>
     @endif
 
 
@@ -479,8 +492,31 @@ document.addEventListener('DOMContentLoaded', function() {
     try {
         const pageId = "{{ $post->page_id }}";
         const postId = "{{ $post->id }}";
-        const metrics = @json(['summary' => $insights['summary'] ?? [], 'breakdowns' => $breakdowns ?? [], 'detailedBreakdowns' => $detailedBreakdowns ?? []]);
-        fetch(`{{ route('facebook.data-management.ai-summary') }}`, {
+        // Gửi đầy đủ dữ liệu (bao gồm video metrics, actions, insights thô)
+        const metrics = {
+            summary: @json($insights['summary'] ?? []),
+            video: {
+                views: @json($insights['summary']['video_views'] ?? ($insights['video']['views'] ?? null)),
+                view_time: @json($insights['summary']['video_view_time'] ?? ($insights['video']['view_time'] ?? null)),
+                avg_time: @json($insights['summary']['video_avg_time_watched'] ?? ($insights['video']['avg_time'] ?? null)),
+                plays: @json($insights['summary']['video_plays'] ?? ($insights['video']['plays'] ?? null)),
+                p25: @json($insights['summary']['video_p25_watched_actions'] ?? ($insights['video']['p25'] ?? null)),
+                p50: @json($insights['summary']['video_p50_watched_actions'] ?? ($insights['video']['p50'] ?? null)),
+                p75: @json($insights['summary']['video_p75_watched_actions'] ?? ($insights['video']['p75'] ?? null)),
+                p95: @json($insights['summary']['video_p95_watched_actions'] ?? ($insights['video']['p95'] ?? null)),
+                p100: @json($insights['summary']['video_p100_watched_actions'] ?? ($insights['video']['p100'] ?? null)),
+                thruplays: @json($insights['summary']['thruplays'] ?? ($insights['video']['thruplays'] ?? null)),
+                video_30s: @json($insights['summary']['video_30_sec_watched'] ?? ($insights['video']['video_30s'] ?? null)),
+            },
+            breakdowns: @json($breakdowns ?? []),
+            detailedBreakdowns: @json($detailedBreakdowns ?? []),
+            insights: @json($insights ?? []),
+            actions: @json($actions ?? [])
+        };
+        // Hỗ trợ debug: đặt window._aiDebug = true hoặc thêm ?debug=1 vào URL
+        const isDebug = (window._aiDebug === true) || new URLSearchParams(location.search).has('debug');
+        const aiUrl = `{{ route('facebook.data-management.ai-summary') }}` + (isDebug ? '?debug=1' : '');
+        fetch(aiUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': '{{ csrf_token() }}' },
             body: JSON.stringify({ page_id: pageId, post_id: postId, metrics })
@@ -488,10 +524,29 @@ document.addEventListener('DOMContentLoaded', function() {
             const el = document.getElementById('ai-summary-text');
             if (!el) return;
             const txt = res.summary || 'Không có nhận định.';
-            el.innerHTML = formatAiSummary(txt);
+            let html = formatAiSummary(txt);
+            if (isDebug) {
+                const debugDump = {
+                    ok: res.ok ?? true,
+                    env_key_present: res.env_key_present ?? undefined,
+                    since: res.since ?? undefined,
+                    until: res.until ?? undefined,
+                    metrics_sent: res.metrics_sent ?? undefined,
+                };
+                html += '<br><details class="mt-2"><summary class="cursor-pointer text-xs text-gray-600">Xem debug (payload gửi AI)</summary>' +
+                        '<pre class="text-xs whitespace-pre-wrap bg-gray-50 p-2 border mt-2 rounded">' +
+                        (typeof debugDump === 'object' ? JSON.stringify(debugDump, null, 2) : String(debugDump)) +
+                        '</pre></details>';
+            }
+            el.classList.remove('ai-dots');
+            el.innerHTML = html;
+            el.classList.add('animate-fade-in');
         }).catch(() => {
             const el = document.getElementById('ai-summary-text');
-            if (el) el.textContent = 'Không tạo được nhận định AI.';
+            if (el) {
+                const isDbg = (window._aiDebug === true) || new URLSearchParams(location.search).has('debug');
+                el.textContent = isDbg ? 'Không tạo được nhận định AI (check network/ENV). Bật debug để xem chi tiết.' : 'Không tạo được nhận định AI.';
+            }
         });
     } catch (e) {}
     
@@ -500,8 +555,8 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!text) return '';
         let html = text
             .replace(/\*\*([^*]+)\*\*/g, '<strong>$1<\/strong>')
-            .replace(/\*\s+/g, '• ')
-            .replace(/\n/g, '\n');
+            .replace(/^(?:[-\*])\s+/gm, '• ')
+            .replace(/\n/g, '<br>');
         return html;
     }
     // Breakdown Charts
@@ -816,8 +871,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     }
                 });
             }
-        @endif
-    });
     @endif
+    @endif
+});
 </script>
 </x-layouts.app>

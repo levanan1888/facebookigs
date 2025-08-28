@@ -53,17 +53,9 @@ class FacebookDashboardController extends Controller
         $from = $request->get('from');
         $to = $request->get('to');
         if (!$from || !$to) {
-            // Sử dụng ngày có dữ liệu thay vì ngày hiện tại
-            $maxDate = FacebookAdInsight::max('date');
-            $minDate = FacebookAdInsight::min('date');
-            
-            if ($maxDate && $minDate) {
-                $to = $maxDate;
-                $from = $minDate;
-            } else {
-                $to = now()->toDateString();
-                $from = now()->subDays(29)->toDateString();
-            }
+            // Mặc định lấy 36 tháng gần nhất để tránh thiếu số liệu khi AI tổng hợp
+            $to = now()->toDateString();
+            $from = now()->subMonthsNoOverflow(36)->toDateString();
         }
         $selectedAccountId = $request->get('account_id');
         $selectedCampaignId = $request->get('campaign_id');
@@ -204,9 +196,13 @@ class FacebookDashboardController extends Controller
     public function overviewAiSummary(Request $request)
     {
         $data = $this->getOverviewData($request);
-
-        $since = $data['filters']['from'] ?? null;
-        $until = $data['filters']['to'] ?? null;
+       
+        // Nhận data breakdowns từ frontend nếu có
+        $frontendBreakdowns = $request->input('breakdowns_data', []);
+        
+        // Ưu tiên khoảng thời gian người dùng chọn; nếu thiếu, mặc định 36 tháng
+        $since = $request->get('from') ?: ($data['filters']['from'] ?? now()->subMonthsNoOverflow(36)->toDateString());
+        $until = $request->get('to') ?: ($data['filters']['to'] ?? now()->toDateString());
 
         // Tổng hợp dữ liệu chi tiết từ database theo khoảng ngày
         $agg = FacebookAdInsight::query()
@@ -243,6 +239,21 @@ class FacebookDashboardController extends Controller
         // Breakdown theo thiết bị/khu vực/giới tính/độ tuổi/vị trí/nền tảng – tái sử dụng service đang dùng ở Post Detail/Overview
         $breakdownsService = new \App\Services\FacebookDataService();
         $breakdownsAgg = $breakdownsService->getOverviewBreakdowns(null, $since, $until);
+        // Debug optional: kiểm tra trực tiếp bảng facebook_breakdowns nếu số liệu bất thường
+        if ($request->boolean('debug_breakdowns')) {
+            $insightIds = FacebookAdInsight::query()
+                ->whereBetween('date', [$since, $until])
+                ->pluck('id');
+            $raw = \App\Models\FacebookBreakdown::whereIn('ad_insight_id', $insightIds->all())
+                ->limit(50)
+                ->get(['ad_insight_id','breakdown_type','breakdown_value','metrics']);
+            return response()->json(['raw_breakdowns_samples' => $raw, 'ids_count' => $insightIds->count(), 'since' => $since, 'until' => $until]);
+        }
+      
+        // Fallback: nếu service không trả về, dùng breakdowns từ frontend gửi lên (giống view)
+        if (empty($breakdownsAgg) && !empty($frontendBreakdowns['breakdowns'])) {
+            $breakdownsAgg = $frontendBreakdowns['breakdowns'];
+        }
 
         // Chuẩn hoá breakdowns cho AI: gom thành các nhóm dễ hiểu
         $normalizeNumber = function ($v) { return is_numeric($v) ? $v + 0 : 0; };
@@ -385,6 +396,8 @@ class FacebookDashboardController extends Controller
                     'impression_device' => $computeTopWorst($placements['impression_device'] ?? [], 'spend'),
                 ],
             ],
+            // Dữ liệu breakdowns từ frontend (nếu có)
+            'frontend_breakdowns' => $frontendBreakdowns,
             // Raw để debug khi cần
             'breakdowns_raw' => $breakdownsAgg,
         ];
@@ -400,7 +413,13 @@ class FacebookDashboardController extends Controller
         }
 
         $summary = $gemini->generateMarketingSummary('facebook-dashboard', $since, $until, $metrics);
-        return response()->json(['ok' => true, 'summary' => $summary, 'hasBreakdowns' => !empty($metrics['breakdowns'])]);
+        return response()->json([
+            'ok' => true, 
+            'summary' => $summary, 
+            'hasBreakdowns' => !empty($metrics['breakdowns']),
+            'hasFrontendBreakdowns' => !empty($frontendBreakdowns),
+            'breakdownsCount' => count($frontendBreakdowns)
+        ]);
     }
 
     private function getHierarchyData(): array

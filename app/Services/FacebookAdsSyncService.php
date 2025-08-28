@@ -35,7 +35,7 @@ class FacebookAdsSyncService
      * Đồng bộ dữ liệu Facebook Ads theo cấu trúc mới đã normalize
      * Campaign → Ad Set → Ad → Ad Creative (Post) + Insights
      */
-    public function syncFacebookData(?callable $onProgress = null, ?string $since = null, ?string $until = null): array
+    public function syncFacebookData(?callable $onProgress = null, ?string $since = null, ?string $until = null, ?int $limit = null, bool $fixVideoMetrics = false): array
     {
         $since = $since ?: now()->subYear()->format('Y-m-d');
         $until = $until ?: now()->format('Y-m-d');
@@ -84,8 +84,11 @@ class FacebookAdsSyncService
             
             // 5. Lấy Ads và Insights cho mỗi Ad Set
             $adSets = FacebookAdSet::all();
+            if ($limit) {
+                $adSets = $adSets->take($limit);
+            }
             foreach ($adSets as $adSet) {
-                $this->syncAdsAndInsights($adSet, $result, $onProgress);
+                $this->syncAdsAndInsights($adSet, $result, $onProgress, $fixVideoMetrics);
             }
             
             $result['end_time'] = now();
@@ -342,7 +345,7 @@ class FacebookAdsSyncService
     /**
      * Đồng bộ Ads và Insights cho Ad Set
      */
-    private function syncAdsAndInsights(FacebookAdSet $adSet, array &$result, ?callable $onProgress): void
+    private function syncAdsAndInsights(FacebookAdSet $adSet, array &$result, ?callable $onProgress, bool $fixVideoMetrics = false): void
     {
         $this->reportProgress($onProgress, "Đang lấy Ads cho Ad Set: {$adSet->name}", $result);
         
@@ -633,6 +636,28 @@ class FacebookAdsSyncService
     }
 
     /**
+     * Extract video views from actions array
+     */
+    private function extractVideoViews(array $insight): int
+    {
+        // Thử lấy từ video_views trực tiếp
+        if (isset($insight['video_views']) && is_numeric($insight['video_views'])) {
+            return (int) $insight['video_views'];
+        }
+
+        // Lấy từ actions array với action_type = video_view
+        if (isset($insight['actions']) && is_array($insight['actions'])) {
+            foreach ($insight['actions'] as $action) {
+                if (isset($action['action_type']) && $action['action_type'] === 'video_view') {
+                    return (int) $action['value'];
+                }
+            }
+        }
+
+        return 0;
+    }
+
+    /**
      * Extract video metric value for decimal fields (like video_avg_time_watched)
      */
     private function extractVideoMetricValueDecimal(array $insight, string $field): float
@@ -658,6 +683,131 @@ class FacebookAdsSyncService
         }
         
         return 0.0;
+    }
+
+    /**
+     * Extract video avg time watched theo logic TestVideoMetricsResponse.php
+     */
+    private function extractVideoAvgTimeWatched(array $insight): float
+    {
+        // Thử lấy từ video_avg_time_watched trực tiếp
+        if (isset($insight['video_avg_time_watched']) && is_numeric($insight['video_avg_time_watched'])) {
+            return (float) $insight['video_avg_time_watched'];
+        }
+
+        // Thử lấy từ video_avg_time_watched_actions array
+        if (isset($insight['video_avg_time_watched_actions']) && is_array($insight['video_avg_time_watched_actions'])) {
+            foreach ($insight['video_avg_time_watched_actions'] as $action) {
+                if (isset($action['action_type']) && $action['action_type'] === 'video_view') {
+                    return (float) $action['value'];
+                }
+            }
+        }
+
+        // Thử lấy từ actions array với action_type = video_avg_time_watched_actions
+        if (isset($insight['actions']) && is_array($insight['actions'])) {
+            foreach ($insight['actions'] as $action) {
+                if (isset($action['action_type']) && $action['action_type'] === 'video_avg_time_watched_actions') {
+                    return (float) $action['value'];
+                }
+            }
+        }
+
+        return 0.0;
+    }
+
+    /**
+     * Extract video view time from Facebook API response
+     * Facebook không cung cấp trực tiếp video_view_time, cần tính toán từ các metrics khác
+     */
+    private function extractVideoViewTime(array $insight): int
+    {
+        // Thử lấy từ video_view_time trực tiếp (nếu có)
+        if (isset($insight['video_view_time']) && is_numeric($insight['video_view_time'])) {
+            return (int) $insight['video_view_time'];
+        }
+
+        // Thử lấy từ video_view_time array nếu có
+        if (isset($insight['video_view_time']) && is_array($insight['video_view_time'])) {
+            foreach ($insight['video_view_time'] as $action) {
+                if (isset($action['action_type']) && $action['action_type'] === 'video_view') {
+                    return (int) $action['value'];
+                }
+            }
+        }
+
+        // Tính toán từ video_avg_time_watched và video_views
+        $avgTimeWatched = $this->extractVideoAvgTimeWatched($insight);
+        $videoViews = $this->extractVideoViews($insight);
+
+        if ($avgTimeWatched > 0 && $videoViews > 0) {
+            return (int) ($avgTimeWatched * $videoViews);
+        }
+
+        // Fallback: tính từ video_30_sec_watched_actions
+        if (isset($insight['video_30_sec_watched_actions'])) {
+            $thirtySecWatched = $this->extractVideoMetricValue($insight, 'video_30_sec_watched_actions');
+            return $thirtySecWatched * 30; // Ước tính 30 giây cho mỗi view
+        }
+
+        // Fallback: tính từ video_p25_watched_actions (25% completion)
+        if (isset($insight['video_p25_watched_actions'])) {
+            $p25Watched = $this->extractVideoMetricValue($insight, 'video_p25_watched_actions');
+            return $p25Watched * 25; // Ước tính 25 giây cho mỗi view
+        }
+
+        return 0;
+    }
+
+    /**
+     * Extract và xử lý video metrics một cách toàn diện
+     */
+    private function extractVideoMetrics(array $insight): array
+    {
+        $videoMetrics = [
+            'video_views' => 0,
+            'video_plays' => 0,
+            'video_plays_at_25' => 0,
+            'video_plays_at_50' => 0,
+            'video_plays_at_75' => 0,
+            'video_plays_at_100' => 0,
+            'video_avg_time_watched' => 0.0,
+            'video_view_time' => 0,
+            'video_30_sec_watched' => 0,
+            'thruplays' => 0,
+        ];
+
+        // Video views - lấy từ actions array
+        $videoMetrics['video_views'] = $this->extractVideoViews($insight);
+
+        // Video plays - sử dụng video_views làm video_plays
+        $videoMetrics['video_plays'] = $this->extractVideoViews($insight);
+
+        // Video completion rates
+        $videoMetrics['video_plays_at_25'] = $this->extractVideoMetricValue($insight, 'video_p25_watched_actions');
+        $videoMetrics['video_plays_at_50'] = $this->extractVideoMetricValue($insight, 'video_p50_watched_actions');
+        $videoMetrics['video_plays_at_75'] = $this->extractVideoMetricValue($insight, 'video_p75_watched_actions');
+        $videoMetrics['video_plays_at_100'] = $this->extractVideoMetricValue($insight, 'video_p100_watched_actions');
+
+        // Average time watched - sử dụng method mới
+        $videoMetrics['video_avg_time_watched'] = $this->extractVideoAvgTimeWatched($insight);
+
+        // Video view time - sử dụng method mới
+        $videoMetrics['video_view_time'] = $this->extractVideoViewTime($insight);
+
+        // 30 second watched
+        $videoMetrics['video_30_sec_watched'] = $this->extractVideoMetricValue($insight, 'video_30_sec_watched_actions');
+
+        // Thruplays
+        $videoMetrics['thruplays'] = $this->extractVideoMetricValue($insight, 'video_thruplay_watched_actions');
+
+        // Log để debug
+        Log::info("Extracted video metrics", [
+            'insight_id' => $insight['ad_id'] ?? 'unknown',
+            'video_metrics' => $videoMetrics
+        ]);
+
+        return $videoMetrics;
     }
 
     /**
@@ -1021,7 +1171,7 @@ class FacebookAdsSyncService
                     'ad_id' => $facebookAd->id
                 ]);
                 
-                // Tạo record với giá trị 0
+                // Tạo record với giá trị 0 - đảm bảo đầy đủ các trường theo response Facebook API
                 $date = now()->toDateString();
                 $postIdForSave = $facebookAd->post_id ?? null;
                 $pageIdForSave = $facebookAd->page_id ?? null;
@@ -1039,6 +1189,8 @@ class FacebookAdsSyncService
                         'unique_clicks' => 0,
                         'ctr' => 0,
                         'unique_ctr' => 0,
+                        'unique_link_clicks_ctr' => 0,
+                        'unique_impressions' => 0,
                         'cpc' => 0,
                         'cpm' => 0,
                         'frequency' => 0,
@@ -1065,6 +1217,7 @@ class FacebookAdsSyncService
                         'video_p100_watched_actions' => 0,
                         'thruplays' => 0,
                         'video_30_sec_watched' => 0,
+                        'video_play_actions' => 0,
                         'video_view_time' => 0,
                         'post_id' => $postIdForSave,
                         'page_id' => $pageIdForSave,
@@ -1076,7 +1229,7 @@ class FacebookAdsSyncService
             }
 
             foreach ($adInsights['data'] as $insight) {
-                // Parse actions để map về các trường quan trọng
+                // Parse actions để map về các trường quan trọng - lưu đầy đủ theo response Facebook API
                 $actions = $insight['actions'] ?? [];
                 $actionTotals = [];
                 foreach ($actions as $a) {
@@ -1085,6 +1238,13 @@ class FacebookAdsSyncService
                     if ($type === '') { continue; }
                     $actionTotals[$type] = ($actionTotals[$type] ?? 0) + $val;
                 }
+                
+                // Log để debug actions parsing
+                Log::info("Parsed actions for ad insights", [
+                    'ad_id' => $facebookAd->id,
+                    'actions_count' => count($actions),
+                    'action_totals' => $actionTotals
+                ]);
                 
                 // Xác định date từ insight
                 $date = $insight['date_start'] ?? $insight['date_stop'] ?? now()->toDateString();
@@ -1120,7 +1280,7 @@ class FacebookAdsSyncService
                         'date' => $date,
                     ],
                     [
-                        // Basic metrics
+                        // Basic metrics - lưu đầy đủ theo response Facebook API
                         'spend' => (float) ($insight['spend'] ?? 0),
                         'reach' => (int) ($insight['reach'] ?? 0),
                         'impressions' => (int) ($insight['impressions'] ?? 0),
@@ -1128,11 +1288,13 @@ class FacebookAdsSyncService
                         'unique_clicks' => (int) ($insight['unique_clicks'] ?? 0),
                         'ctr' => (float) ($insight['ctr'] ?? 0),
                         'unique_ctr' => (float) ($insight['unique_ctr'] ?? 0),
+                        'unique_link_clicks_ctr' => (float) ($insight['unique_link_clicks_ctr'] ?? 0),
+                        'unique_impressions' => (int) ($insight['unique_impressions'] ?? 0),
                         'cpc' => (float) ($insight['cpc'] ?? 0),
                         'cpm' => (float) ($insight['cpm'] ?? 0),
                         'frequency' => (float) ($insight['frequency'] ?? 0),
                         
-                        // Conversion metrics
+                        // Conversion metrics - lưu đầy đủ theo response Facebook API
                         'conversions' => (int) ($insight['conversions'] ?? (
                             ($actionTotals['lead'] ?? 0)
                             + ($actionTotals['onsite_conversion.lead'] ?? 0)
@@ -1143,7 +1305,7 @@ class FacebookAdsSyncService
                         'cost_per_conversion' => (float) ($insight['cost_per_conversion'] ?? 0),
                         'purchase_roas' => (float) ($insight['purchase_roas'] ?? 0),
                         
-                        // Click metrics
+                        // Click metrics - lưu đầy đủ theo response Facebook API
                         'outbound_clicks' => (int) ($insight['outbound_clicks'] ?? 0),
                         'unique_outbound_clicks' => (int) ($insight['unique_outbound_clicks'] ?? 0),
                         'inline_link_clicks' => (int) ($insight['inline_link_clicks'] ?? ($actionTotals['link_click'] ?? 0)),
@@ -1156,10 +1318,10 @@ class FacebookAdsSyncService
                         'cost_per_action_type' => $insight['cost_per_action_type'] ?? null,
                         'cost_per_unique_action_type' => $insight['cost_per_unique_action_type'] ?? null,
                         
-                        // Video metrics - chỉ giữ lại các trường chính
+                        // Video metrics - xử lý theo logic TestVideoMetricsResponse.php và response Facebook API
                         'video_views' => (int) ($insight['video_views'] ?? ($actionTotals['video_view'] ?? 0)),
-                        'video_plays' => (int) ($insight['video_plays'] ?? 0),
-                        'video_avg_time_watched' => (float) ($insight['video_avg_time_watched'] ?? 0),
+                        'video_plays' => (int) ($insight['video_plays'] ?? ($actionTotals['video_view'] ?? 0)),
+                        'video_avg_time_watched' => $this->extractVideoAvgTimeWatched($insight),
                         'video_p25_watched_actions' => (int) ($this->extractVideoMetricValue($insight, 'video_p25_watched_actions')),
                         'video_p50_watched_actions' => (int) ($this->extractVideoMetricValue($insight, 'video_p50_watched_actions')),
                         'video_p75_watched_actions' => (int) ($this->extractVideoMetricValue($insight, 'video_p75_watched_actions')),
@@ -1167,7 +1329,8 @@ class FacebookAdsSyncService
                         'video_p100_watched_actions' => (int) ($this->extractVideoMetricValue($insight, 'video_p100_watched_actions')),
                         'thruplays' => (int) ($insight['thruplays'] ?? 0),
                         'video_30_sec_watched' => (int) ($this->extractVideoMetricValue($insight, 'video_30_sec_watched_actions')),
-                        'video_play_actions' => (int) ($this->extractVideoMetricValue($insight, 'video_play_actions')),
+                        'video_play_actions' => (int) ($insight['video_play_actions'] ?? 0),
+                        'video_view_time' => $this->extractVideoViewTime($insight),
                         
                         // Lưu mapping post/page nếu schema có
                         ...(Schema::hasColumn('facebook_ad_insights', 'post_id') && $postIdForSave ? ['post_id' => (string) $postIdForSave] : []),
@@ -1175,6 +1338,24 @@ class FacebookAdsSyncService
                     ]
                 );
                 $result['ad_insights']++;
+                
+                // Log để debug video metrics đã lưu
+                Log::info("Đã lưu ad insights với video metrics", [
+                    'ad_id' => $facebookAd->id,
+                    'ad_insight_id' => $adInsight->id,
+                    'date' => $date,
+                    'video_views' => $adInsight->video_views,
+                    'video_plays' => $adInsight->video_plays,
+                    'video_avg_time_watched' => $adInsight->video_avg_time_watched,
+                    'video_view_time' => $adInsight->video_view_time,
+                    'video_30_sec_watched' => $adInsight->video_30_sec_watched,
+                    'video_p25_watched_actions' => $adInsight->video_p25_watched_actions,
+                    'video_p50_watched_actions' => $adInsight->video_p50_watched_actions,
+                    'video_p75_watched_actions' => $adInsight->video_p75_watched_actions,
+                    'video_p95_watched_actions' => $adInsight->video_p95_watched_actions,
+                    'video_p100_watched_actions' => $adInsight->video_p100_watched_actions,
+                    'thruplays' => $adInsight->thruplays,
+                ]);
                 
                 // Lưu ad_insight_id để sử dụng cho breakdowns
                 $this->lastProcessedAdInsightId = $adInsight->id;
@@ -1233,7 +1414,7 @@ class FacebookAdsSyncService
             'video_attributed_view_time' => null,
         ];
         
-        // Extract từ video fields trực tiếp
+        // Extract từ video fields trực tiếp - theo response Facebook API
         if (isset($insight['video_30_sec_watched_actions'])) {
             foreach ($insight['video_30_sec_watched_actions'] as $action) {
                 if ($action['action_type'] === 'video_view') {
@@ -1247,15 +1428,26 @@ class FacebookAdsSyncService
             $videoMetrics['video_30_sec_watched'] = (int) $insight['video_30_sec_watched'];
         }
         
-        if (isset($insight['video_avg_time_watched_actions'])) {
-            foreach ($insight['video_avg_time_watched_actions'] as $action) {
-                if ($action['action_type'] === 'video_view') {
-                    $videoMetrics['video_avg_time_watched'] = (float) $action['value'];
-                }
-            }
-        }
+        // Sử dụng method mới để extract video_avg_time_watched
+        $videoMetrics['video_avg_time_watched'] = $this->extractVideoAvgTimeWatched($insight);
         
-        // Extract từ video plays percentage
+        // Sử dụng method mới để extract video_view_time
+        $videoMetrics['video_view_time'] = $this->extractVideoViewTime($insight);
+        
+        // Log để debug video metrics extraction
+        Log::info("Extracted video metrics from insight", [
+            'insight_keys' => array_keys($insight),
+            'video_metrics' => $videoMetrics,
+            'has_video_30_sec_watched_actions' => isset($insight['video_30_sec_watched_actions']),
+            'has_video_avg_time_watched_actions' => isset($insight['video_avg_time_watched_actions']),
+            'has_video_p25_watched_actions' => isset($insight['video_p25_watched_actions']),
+            'has_video_p50_watched_actions' => isset($insight['video_p50_watched_actions']),
+            'has_video_p75_watched_actions' => isset($insight['video_p75_watched_actions']),
+            'has_video_p95_watched_actions' => isset($insight['video_p95_watched_actions']),
+            'has_video_p100_watched_actions' => isset($insight['video_p100_watched_actions']),
+        ]);
+        
+                // Extract từ video plays percentage - theo response Facebook API
         $videoPlaysFields = [
             'video_plays_at_25' => 'video_plays_at_25',
             'video_plays_at_50' => 'video_plays_at_50',
@@ -1269,10 +1461,10 @@ class FacebookAdsSyncService
             }
         }
         
-        // Extract từ video percentage watched actions
+        // Extract từ video percentage watched actions - theo response Facebook API
         $percentageFields = [
             'video_p25_watched_actions' => 'video_p25_watched_actions',
-            'video_p50_watched_actions' => 'video_p50_watched_actions', 
+            'video_p50_watched_actions' => 'video_p50_watched_actions',
             'video_p75_watched_actions' => 'video_p75_watched_actions',
             'video_p95_watched_actions' => 'video_p95_watched_actions',
             'video_p100_watched_actions' => 'video_p100_watched_actions'
@@ -1288,7 +1480,16 @@ class FacebookAdsSyncService
             }
         }
         
-        // Extract video_play_actions - field mới phát hiện
+        // Log để debug video percentage metrics
+        Log::info("Extracted video percentage metrics", [
+            'video_p25_watched_actions' => $videoMetrics['video_p25_watched_actions'],
+            'video_p50_watched_actions' => $videoMetrics['video_p50_watched_actions'],
+            'video_p75_watched_actions' => $videoMetrics['video_p75_watched_actions'],
+            'video_p95_watched_actions' => $videoMetrics['video_p95_watched_actions'],
+            'video_p100_watched_actions' => $videoMetrics['video_p100_watched_actions'],
+        ]);
+        
+        // Extract video_play_actions - field mới phát hiện từ response Facebook API
         if (isset($insight['video_play_actions'])) {
             foreach ($insight['video_play_actions'] as $action) {
                 if ($action['action_type'] === 'video_view') {
@@ -1297,7 +1498,13 @@ class FacebookAdsSyncService
             }
         }
         
-        // Extract từ actions array (fallback)
+        // Log để debug video play actions
+        Log::info("Extracted video play actions", [
+            'video_play_actions' => $videoMetrics['video_play_actions'],
+            'has_video_play_actions' => isset($insight['video_play_actions']),
+        ]);
+        
+        // Extract từ actions array (fallback) - chỉ xử lý các trường cơ bản từ response Facebook API
         if (isset($insight['actions'])) {
             foreach ($insight['actions'] as $action) {
                 switch ($action['action_type']) {
@@ -1331,15 +1538,20 @@ class FacebookAdsSyncService
                     case 'thruplay':
                         $videoMetrics['thruplays'] = (int) $action['value'];
                         break;
-                    case 'video_avg_time_watched_actions':
-                        $videoMetrics['video_avg_time_watched'] = (float) $action['value'];
-                        break;
-                    case 'video_view_time':
-                        $videoMetrics['video_view_time'] = (int) $action['value'];
-                        break;
+                    // video_avg_time_watched và video_view_time đã được xử lý ở trên bằng method mới
                 }
             }
         }
+        
+        // Log để debug final video metrics
+        Log::info("Final extracted video metrics", [
+            'video_views' => $videoMetrics['video_views'],
+            'video_plays' => $videoMetrics['video_plays'],
+            'video_avg_time_watched' => $videoMetrics['video_avg_time_watched'],
+            'video_view_time' => $videoMetrics['video_view_time'],
+            'video_30_sec_watched' => $videoMetrics['video_30_sec_watched'],
+            'thruplays' => $videoMetrics['thruplays'],
+        ]);
         
         return $videoMetrics;
     }
@@ -1380,6 +1592,9 @@ class FacebookAdsSyncService
                         'clicks' => (int) ($insight['clicks'] ?? 0),
                         'unique_clicks' => (int) ($insight['unique_clicks'] ?? 0),
                         'ctr' => (float) ($insight['ctr'] ?? 0),
+                        'unique_ctr' => (float) ($insight['unique_ctr'] ?? 0),
+                        'unique_link_clicks_ctr' => (float) ($insight['unique_link_clicks_ctr'] ?? 0),
+                        'unique_impressions' => (int) ($insight['unique_impressions'] ?? 0),
                         'cpc' => (float) ($insight['cpc'] ?? 0),
                         'cpm' => (float) ($insight['cpm'] ?? 0),
                         'frequency' => (float) ($insight['frequency'] ?? 0),
@@ -2399,22 +2614,13 @@ class FacebookAdsSyncService
                             'actions' => isset($insight['actions']) ? json_encode($insight['actions']) : null,
                             'action_values' => isset($insight['action_values']) ? json_encode($insight['action_values']) : null,
                             
-                            // Video metrics chính từ API
-                            'video_views' => (int) ($insight['video_views'] ?? 0),
-                            'video_plays' => (int) ($insight['video_play_actions'] ?? 0), // Sử dụng đúng field video_play_actions
-                            'video_plays_at_25' => (int) ($insight['video_p25_watched_actions'] ?? 0), // Sử dụng video_p25_watched_actions
-                            'video_plays_at_50' => (int) ($insight['video_p50_watched_actions'] ?? 0), // Sử dụng video_p50_watched_actions
-                            'video_plays_at_75' => (int) ($insight['video_p75_watched_actions'] ?? 0), // Sử dụng video_p75_watched_actions
-                            'video_plays_at_100' => (int) ($insight['video_p100_watched_actions'] ?? 0), // Sử dụng video_p100_watched_actions
+                            // Video metrics chính từ API - sử dụng method extractVideoMetrics
+                            ...$this->extractVideoMetrics($insight),
                             'video_p25_watched_actions' => (int) ($insight['video_p25_watched_actions'] ?? 0),
                             'video_p50_watched_actions' => (int) ($insight['video_p50_watched_actions'] ?? 0),
                             'video_p75_watched_actions' => (int) ($insight['video_p75_watched_actions'] ?? 0),
                             'video_p95_watched_actions' => (int) ($insight['video_p95_watched_actions'] ?? 0),
                             'video_p100_watched_actions' => (int) ($insight['video_p100_watched_actions'] ?? 0),
-                            'thruplays' => (int) ($insight['video_thruplay_watched_actions'] ?? 0), // Sử dụng đúng field video_thruplay_watched_actions
-                            'video_avg_time_watched' => (float) ($insight['video_avg_time_watched_actions'] ?? 0), // Sử dụng đúng field video_avg_time_watched_actions
-                            'video_view_time' => (int) ($insight['video_view_time'] ?? 0), // Sử dụng đúng field video_view_time
-                            'video_30_sec_watched' => (int) ($insight['video_30_sec_watched_actions'] ?? 0), // Sử dụng đúng field video_30_sec_watched_actions
                         ]
                     );
                 }
